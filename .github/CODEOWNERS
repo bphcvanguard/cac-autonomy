@@ -1,0 +1,4 @@
+# Who must review what. Last match wins.
+# To add pod owners, add lines like:
+#   /src/cac_hardware/   @github-username-of-platform-owner
+* @KrithinP

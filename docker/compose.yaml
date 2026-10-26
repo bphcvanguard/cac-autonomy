@@ -1,0 +1,69 @@
+name: cac
+
+# dev      laptops with an NVIDIA GPU and the NVIDIA Container Toolkit
+# dev-cpu  every other laptop (Intel/AMD graphics or software rendering)
+# robot    the rover's onboard computer (no GUI)
+# scripts/dev.sh picks dev or dev-cpu for you.
+#
+# The repo is mounted at /workspace, so build/ install/ log/ appear in your clone (gitignored).
+# network_mode: host keeps ROS discovery simple. ipc: host + shm_size help with point clouds.
+
+x-dev: &dev
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+    target: dev
+    args:
+      UID: "${CAC_UID:-1000}"
+      GID: "${CAC_GID:-1000}"
+  image: cac:dev
+  network_mode: host
+  ipc: host
+  shm_size: 2gb
+  init: true                 # reaps dead Gazebo processes, makes Ctrl-C work
+  restart: unless-stopped
+  volumes:
+    - ..:/workspace:rw
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+  command: sleep infinity
+
+services:
+  dev:
+    <<: *dev
+    environment:
+      DISPLAY: "${DISPLAY:-:0}"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics,display
+      __NV_PRIME_RENDER_OFFLOAD: "1"
+      __GLX_VENDOR_LIBRARY_NAME: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, graphics, display]
+
+  dev-cpu:
+    <<: *dev
+    environment:
+      DISPLAY: "${DISPLAY:-:0}"
+      LIBGL_ALWAYS_SOFTWARE: "${CAC_SOFTWARE_GL:-0}"
+    devices:
+      - /dev/dri:/dev/dri
+
+  robot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: robot
+    image: cac:robot
+    network_mode: host
+    ipc: host
+    shm_size: 2gb
+    init: true
+    restart: unless-stopped
+    privileged: true         # replace with the exact serial/USB devices once known
+    volumes:
+      - ..:/workspace:rw
+    command: sleep infinity

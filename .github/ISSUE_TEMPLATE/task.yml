@@ -1,0 +1,33 @@
+name: Task
+description: A ticket with a measurable Definition of Done
+title: "[pod] "
+labels: ["type:task"]
+body:
+  - type: dropdown
+    id: pod
+    attributes:
+      label: Pod
+      options: [Platform, Localization, Perception, Navigation, Mission/Sim/Ops, Integration]
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: What needs to exist when this is done?
+    validations: {required: true}
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      description: Measurable and demonstrable. "Error under 5% on a 5 m straight", not "odom works".
+    validations: {required: true}
+  - type: input
+    id: due
+    attributes:
+      label: Due date
+      placeholder: "2026-11-07"
+  - type: textarea
+    id: deps
+    attributes:
+      label: Depends on / blocks
+      placeholder: "Needs #12 (wheel odom). Blocks #15."

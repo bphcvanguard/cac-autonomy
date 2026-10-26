@@ -1,0 +1,25 @@
+# colcon
+build/
+install/
+log/
+
+# Bags and big data never go in git. Keep them on the team Drive.
+bags/
+*.db3
+*.mcap
+*.bag
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Secrets (router passwords, tokens). Never commit these.
+.env
+*.secret

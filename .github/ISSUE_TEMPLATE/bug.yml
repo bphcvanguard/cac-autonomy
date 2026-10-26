@@ -1,0 +1,27 @@
+name: Bug
+description: Something does the wrong thing
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Launch command, sim seed, or steps on the robot.
+    validations: {required: true}
+  - type: input
+    id: evidence
+    attributes:
+      label: Bag / log / video
+      description: Name of the bag on the team Drive. No bag usually means no fix.
+  - type: input
+    id: commit
+    attributes:
+      label: Commit or tag
+      description: Output of `git describe --always --dirty`
+    validations: {required: true}
