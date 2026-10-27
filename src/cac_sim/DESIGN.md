@@ -19,6 +19,8 @@ Output for one layout `<name>` is a self-contained directory:
   truth/truth.yaml          ground truth: obstacles, zones, start pose (for test harness/scoring ONLY;
                             never read by the robot stack: "obstacle locations must not be uploaded")
   truth/map.png             top-down picture of the layout, for briefings
+  truth/setup_sheet.md      ONLY with --setup-sheet: tape-measure checklist to rebuild the layout by hand
+  truth/setup_plan.png      ONLY with --setup-sheet: labelled plan (ids, 50 cm grid) for printing
 ```
 
 ## Layout data (python dict == YAML)
@@ -42,7 +44,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 | `config.py` | integrator | `load_config(path=None) -> dict`, `resolve(cfg, marker_preset=None) -> dict`, `load_layout(path) -> dict`, `empty_layout(cfg)`, `DEFAULT_CONFIG` path |
 | `markers.py` | world | `marker_footprints(cfg)`, `post_circles(cfg) -> [(id, x, y, r)]`, `marker_placement`, `check_markers(cfg)`; shared by `layout.py` and `world.py` (no import cycle) |
 | `geometry.py` | geometry | `surface_height(cfg, layout, x, y, seed) -> ndarray` (vectorised) · `build_terrain(cfg, layout, seed, res, fine_res) -> Mesh` · `rock_mesh(diameter, height, seed, sink=0.04, index=0) -> Mesh` · `crater_params(cfg, layout, i, seed) -> dict` (depth, rim, outer_radius, effective depth after the slope cap) · `write_obj(path, mesh, mtl_name=None)` (with `mtl_name` also writes the sibling `.mtl`) · `write_png(path, img)` · `sand_texture(path, seed, size, albedo)` · `sand_normal_map(...)` · `rock_texture_variants(out_dir, seed, n)` · `rock_normal_map(...)` |
-| `layout.py` | randomiser | `random_layout(cfg, seed) -> layout` · `check_layout(cfg, layout, strict=True) -> list[str]` (empty = valid) · `path_exists(cfg, layout) -> (bool, list[(x, y)])` (disc) · `se2_path_exists(cfg, layout) -> (bool, list[(x, y, yaw_deg)])` (real footprint, must turn) · `random_start_pose(cfg, rng) -> dict` · `truth(cfg, layout, markers=False) -> dict` · `render_map(cfg, layout, png_path, path=None, markers=False)` |
+| `layout.py` | randomiser | `random_layout(cfg, seed) -> layout` · `check_layout(cfg, layout, strict=True) -> list[str]` (empty = valid) · `path_exists(cfg, layout) -> (bool, list[(x, y)])` (disc) · `se2_path_exists(cfg, layout) -> (bool, list[(x, y, yaw_deg)])` (real footprint, must turn) · `random_start_pose(cfg, rng) -> dict` · `truth(cfg, layout, markers=False) -> dict` · `render_map(cfg, layout, png_path, path=None, markers=False, plan=False)` · `setup_sheet(cfg, layout, out_dir, markers=False) -> Path` (writes the two set-up files into `<out_dir>/<name>/truth/`; deterministic; ids B1.. / C1.. = truth order + 1) |
 | `world.py` | world | `write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False) -> Path` · `check_marker_support(cfg)` (raises `MarkerError`) · `check_markers(cfg)` (rule check) |
 | `appearance.py` | world | `sample(cfg, appearance_seed) -> dict` · `wall_rgb(base, app)` · `light_tint(kelvin)`; opt-in via `write_world(..., vary_appearance=False, appearance_seed=None)`. Changes lights, scene ambient/background, wall colour, `sand.png`, `rock_<k>.png` ONLY; never meshes, collision, layout or truth. Ranges: `appearance:` in `arena.yaml` |
 | `scripts/generate_arena` | world | CLI (below) |
@@ -54,7 +56,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
                [--config arena.yaml] [--markers] [--marker-preset frame_inner|perimeter_walls]
-               [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
+               [--setup-sheet] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
 Output on stderr: `warning [name]:` = hard problem (overlap, outside the arena, no path);

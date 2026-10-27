@@ -10,7 +10,8 @@ import math
 import numpy as np
 
 from .geometry import crater_params, write_png
-from .markers import post_circles
+from .markers import (marker_list, marker_placement, post_circles,
+                      wall_mounted)
 
 OBSTACLE_STREAM = 2
 START_STREAM = 3
@@ -787,6 +788,8 @@ _FONT = {
     '3': '111001111001111', '4': '101101111001001', '5': '111100111001111',
     '6': '111100111101111', '7': '111001001001001', '8': '111101111101111',
     '9': '111101111001111',
+    'B': '110101110101110', 'C': '111100100100111', 'X': '101101010101101',
+    'Y': '101101010010010',
 }
 
 
@@ -851,9 +854,28 @@ class _Canvas:
             x_px += 4 * k
 
 
-def render_map(cfg, layout, png_path, path=None, scale=100, markers=False):
-    """Top-down PNG of the layout. North (y = +5) at the top, x to the right."""
-    margin = 34
+def _label_obstacles(cv, layout, kk):
+    """Centre cross + id label on every obstacle (plan mode of render_map)."""
+    for kind, i, x, y, _r in _items(layout):
+        px, py = (int(round(v)) for v in cv.px(x, y))
+        cv.img[py - 5:py + 6, px - 1:px + 1] = (0, 0, 0)
+        cv.img[py - 1:py + 1, px - 5:px + 6] = (0, 0, 0)
+        s = f'{kind[0].upper()}{i + 1}'
+        w_, h_ = 4 * kk * len(s) - kk, 5 * kk
+        x0, y1 = px - w_ // 2, py - 8
+        cv.img[y1 - h_ - 2:y1 + 2, x0 - 3:x0 + w_ + 3] = (250, 248, 240)
+        cv.text(x0, y1 - h_, s, k=kk)
+
+
+def render_map(cfg, layout, png_path, path=None, scale=100, markers=False, plan=False):
+    """Top-down PNG of the layout. North (y = +5) at the top, x to the right.
+
+    `plan=True` is the printable set-up plan: a 50 cm grid with labelled metre lines, every
+    obstacle's centre marked and labelled with its id (B1.. boulders, C1.. craters, as in
+    setup_sheet.md), bigger digits. Without it the output is unchanged.
+    """
+    margin = 60 if plan else 34
+    kk = 3 if plan else 2                                           # glyph scale
     cv = _Canvas(cfg, scale, margin)
     z = cfg['zones']
     cv.arena[:] = (222, 200, 150)                                   # sand
@@ -863,10 +885,18 @@ def render_map(cfg, layout, png_path, path=None, scale=100, markers=False):
     cv.arena[m] = (228, 208, 160)
     # grid every metre, faint
     w, h = cfg['arena']['size']
-    for k in range(1, int(w)):
-        cv.line((k, 0), (k, h), (206, 184, 136), 1)
-    for k in range(1, int(h)):
-        cv.line((0, k), (w, k), (206, 184, 136), 1)
+    if plan:                                                        # 50 cm grid, metre lines bold
+        for k in range(1, int(round(w * 2))):
+            cv.line((k / 2, 0), (k / 2, h), (206, 184, 136) if k % 2 else (150, 125, 80),
+                    1 if k % 2 else 2)
+        for k in range(1, int(round(h * 2))):
+            cv.line((0, k / 2), (w, k / 2), (206, 184, 136) if k % 2 else (150, 125, 80),
+                    1 if k % 2 else 2)
+    else:
+        for k in range(1, int(w)):
+            cv.line((k, 0), (k, h), (206, 184, 136), 1)
+        for k in range(1, int(h)):
+            cv.line((0, k), (w, k), (206, 184, 136), 1)
     # zones
     dash = (10, 8)
     cv.rect(z['excavation'], (110, 110, 110), 2, dash)
@@ -932,10 +962,150 @@ def render_map(cfg, layout, png_path, path=None, scale=100, markers=False):
         x, y = cv.px(k, 0)
         cv.img[int(y) + 1:int(y) + 9, int(x) - 1:int(x) + 1] = 0
         s = str(k)
-        cv.text(int(x) - 4 * len(s) + 2, int(y) + 14, s)
+        cv.text(int(x) - 2 * kk * len(s) + kk, int(y) + 12 + kk, s, k=kk)
     for k in range(int(h) + 1):
         x, y = cv.px(0, k)
         cv.img[int(y) - 1:int(y) + 1, int(x) - 9:int(x) - 1] = 0
         s = str(k)
-        cv.text(int(x) - 12 - 8 * len(s) + 4, int(y) - 5, s)
+        cv.text(int(x) - 12 - 4 * kk * len(s) + 4, int(y) - (5 * kk) // 2, s, k=kk)
+    if plan:
+        x, y = cv.px(w, 0)
+        cv.text(int(x) + 14, int(y) + 12, 'X', k=kk)                # axis names
+        x, y = cv.px(0, h)
+        cv.text(int(x) - 6 * kk, int(y) - 12 - 5 * kk, 'Y', k=kk)
+        _label_obstacles(cv, layout, 4)
     write_png(png_path, cv.img)
+
+
+# ----------------------------------------------------------------------------- set-up sheet
+
+_COMPASS = ('east', 'north-east', 'north', 'north-west', 'west', 'south-west', 'south',
+            'south-east')
+
+
+def _cm(v):
+    """Metres -> whole centimetres, rounding half up (never banker's rounding)."""
+    return int(math.floor(v * 100 + 0.5))
+
+
+def _cm1(v):
+    return f'{v * 100:.1f}'
+
+
+def _heading_words(yaw_deg):
+    """Plain words for a heading: 'north-east' etc. in the sheet's compass (east = +x)."""
+    return _COMPASS[int(((yaw_deg % 360.0) + 22.5) // 45) % 8]
+
+
+def setup_sheet(cfg, layout, out_dir, markers=False):
+    """Write the human set-up sheet for building this layout on a real mock arena.
+
+    Writes `<out_dir>/<name>/truth/setup_sheet.md` and `setup_plan.png` (it reveals obstacle
+    positions, so it lives with the truth) and returns the markdown path. Deterministic; no other
+    output file is touched.
+    """
+    from pathlib import Path
+    root = Path(out_dir) / layout['name'] / 'truth'
+    root.mkdir(parents=True, exist_ok=True)
+    w, h = cfg['arena']['size']
+    rows = []                                   # (x, id, line parts)
+    for i, b in enumerate(layout.get('boulders', [])):
+        rows.append((b['position'][0], b['position'][1], 0, i, f'B{i + 1}', 'boulder',
+                     [str(_cm(b['diameter'])), str(_cm(b['height'])), '-', '-']))
+    for i, c in enumerate(layout.get('craters', [])):
+        cp = crater_params(cfg, layout, i, layout.get('seed'))
+        rows.append((c['position'][0], c['position'][1], 1, i, f'C{i + 1}', 'crater',
+                     [str(_cm(c['diameter'])), '-', _cm1(cp['depth_eff']), _cm1(cp['rim'])]))
+    rows.sort(key=lambda r: (_cm(r[0]), _cm(r[1]), r[2], r[3]))
+    sp = layout['start_pose']
+    yaw = sp['yaw_deg'] % 360.0
+    fl, fw = cfg['randomiser']['robot_footprint']
+    col = cfg['column']
+    cx, cy = col['centre']
+    diag = math.hypot(w, h)
+    n_b, n_c = len(layout.get('boulders', [])), len(layout.get('craters', []))
+    seed = layout.get('seed')
+
+    L_ = [f'# Mock arena set-up sheet: {layout["name"]}', '',
+          f'Seed: {seed if seed is not None else "none (fixed layout)"}. '
+          f'{n_b} boulders, {n_c} craters. All numbers are centimetres from the origin.', '',
+          '**Keep this sheet away from the robot software and its developers during tests: '
+          'it lists where every obstacle is.**', '',
+          '## 1. Origin and directions', '',
+          '- **Origin = the inner corner where the west and south walls meet, the start-zone '
+          'corner.** Measure from the inside faces of the walls, never from the outside.',
+          f'- **x** runs along the long {w:g} m wall (west wall corner towards the far end). '
+          f'**y** runs along the short {h:g} m wall, away from the origin.',
+          '- Seen from above with the origin at bottom-left: x goes right (east), y goes up '
+          '(north). "North/east" on this sheet only mean this; ignore the real compass.',
+          '- Mark each centre with a peg or tape cross, then place the obstacle on it. '
+          'Measure x along the long wall and y at right angles from it (use a set square or '
+          'the 3-4-5 trick), not diagonally.', '',
+          '## 2. Obstacles (lay them out in this order, walking along the long wall)', '',
+          '| Done | Id | Type | x (cm) | y (cm) | Diameter (cm) | Rock height (cm) '
+          '| Crater depth (cm) | Rim height (cm) |',
+          '|---|---|---|---:|---:|---:|---:|---:|---:|']
+    for x, y, _k, _i, oid, kind, rest in rows:
+        L_.append(f'| [ ] | {oid} | {kind} | {_cm(x)} | {_cm(y)} | ' + ' | '.join(rest) + ' |')
+    L_ += ['',
+           '- **Boulder (B):** pick a rock about this diameter and height; centre its footprint '
+           'on the mark and sit it on the sand (it may sink 1-2 cm).',
+           '- **Crater (C):** dig a bowl of this diameter, pile the dug sand round the edge as a '
+           'low rim, then check the depth at the centre with a ruler laid across the rim '
+           '(measure from the ruler down to the bowl floor, and subtract the rim height). '
+           'Diameter is across the bowl; the rim sits just outside it.',
+           '- Each Id (B1, C2, ...) is printed on `setup_plan.png` at the obstacle centre (+). '
+           'On the plan: blue square = the 2 x 2 m start zone with the robot outline and arrow; '
+           'green and red boxes = construction zone and target box (reference only, nothing '
+           'to build); purple dots = marker posts.', '',
+           '## 3. Start pose (robot)', '',
+           f'- Centre of the robot base: **x = {_cm(sp["x"])} cm, y = {_cm(sp["y"])} cm** '
+           f'(robot footprint {fl * 100:.0f} x {fw * 100:.0f} cm).',
+           f'- Heading: **{yaw:.0f} degrees counter-clockwise from the +x direction** (the long '
+           f'wall, pointing away from the origin), seen from above. In words: facing roughly '
+           f'**{_heading_words(yaw)}**.',
+           '- To set it: stand over the robot looking along the long wall away from the origin, '
+           'point the robot that way, then turn it left (counter-clockwise) by this angle; the '
+           'front of the robot is where it points.', '',
+           '## 4. Central column', '']
+    if col.get('shape', 'cylinder') == 'box':
+        L_.append(f'- Box {_cm(col["size"][0])} x {_cm(col["size"][1])} cm, centre '
+                  f'**x = {_cm(cx)} cm, y = {_cm(cy)} cm**, '
+                  f'{_cm(col["height"])} cm tall (or as tall as you have).')
+    else:
+        L_.append(f'- Cylinder diameter {_cm(col["size"][0])} cm, centre '
+                  f'**x = {_cm(cx)} cm, y = {_cm(cy)} cm**, {_cm(col["height"])} cm tall.')
+    L_.append('- If your arena has no such column, mark its footprint with tape or place a box of '
+              'this size.')
+    L_.append('')
+    nxt = 5
+    if markers and marker_list(cfg):
+        L_ += [f'## {nxt}. ArUco markers', '',
+               f'Dictionary {cfg["markers"].get("dictionary", "?")}, printed tag '
+               f'{_cm(cfg["markers"]["size"])} cm (black square); add the white border.', '',
+               '| Id | x (cm) | y (cm) | Centre height (cm) | Faces | Mount |',
+               '|---:|---:|---:|---:|---|---|']
+        for m in marker_list(cfg):
+            mx, my = marker_placement(cfg, m)
+            L_.append(f'| {m["id"]} | {_cm(mx)} | {_cm(my)} | {_cm(m["position"][2])} | '
+                      f'{_heading_words(m["yaw_deg"])} | '
+                      f'{"on the wall" if wall_mounted(cfg, m) else "on a thin post"} |')
+        L_.append('')
+        nxt += 1
+    L_ += [f'## {nxt}. Check before running', '',
+           f'- [ ] Walls form a clean {w:g} x {h:g} m rectangle: both diagonals measure '
+           f'{_cm(diag)} cm.',
+           '- [ ] Sand tilled and levelled; no old footprints or craters left over.',
+           f'- [ ] Every one of the {n_b + n_c} obstacles in the table is placed and ticked; '
+           'no extra rocks or objects.',
+           '- [ ] Re-measure 3 obstacles from the origin with the tape; each within 2 cm.',
+           '- [ ] Crater depths checked at the centre with a ruler.',
+           '- [ ] Robot placed at the start pose above (centre, heading); motors '
+           'stay disabled until everyone is clear.',
+           '- [ ] Photograph the finished field from above/one corner and file it with '
+           f'`{layout["name"]}`.', '',
+           '![plan](setup_plan.png)', '']
+    md = root / 'setup_sheet.md'
+    md.write_text('\n'.join(L_))
+    render_map(cfg, layout, str(root / 'setup_plan.png'), scale=200, markers=markers, plan=True)
+    return md

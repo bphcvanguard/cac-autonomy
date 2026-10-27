@@ -44,6 +44,9 @@ def main(argv=None):
     ap.add_argument('--marker-preset', default=None,
                     help='marker layout from arena.yaml markers.presets '
                          '(frame_inner | perimeter_walls)')
+    ap.add_argument('--setup-sheet', action='store_true',
+                    help='also write truth/setup_sheet.md + setup_plan.png: how to build this '
+                         'layout by hand on a real mock arena (reveals obstacle positions)')
     ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
     ap.add_argument('--overlay', action='store_true', help='draw zones and target (visual only)')
     ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
@@ -96,6 +99,9 @@ def main(argv=None):
         except world.MarkerError as e:
             print(f'error: --markers: {e}', file=sys.stderr)
             return 2
+        if a.setup_sheet:
+            sheet = layout_mod.setup_sheet(cfg, lay, a.out, markers=a.markers)
+            print(f'  set-up sheet: {sheet}')
         print(f'{root}\n  gz sim -r {root / "arena.sdf"}')
     print(f'WARNING: {a.out}/<name>/truth/ is ground truth for the test harness and scoring only. '
           'The robot stack must never read it.')

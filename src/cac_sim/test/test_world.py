@@ -318,3 +318,68 @@ def test_default_output_matches_golden(tmp_path, layout, seed):
     digest = hashlib.sha256((tmp_path / name / 'arena.sdf').read_bytes()).hexdigest()
     assert digest == GOLDEN_SDF_SHA256[(layout, seed)]
 
+
+# ----------------------------------------------------------------------------- set-up sheet
+
+def _tree_bytes(root):
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob('*'))
+            if p.is_file()}
+
+
+def test_setup_sheet_only_with_flag_and_other_bytes_unchanged(tmp_path):
+    a, b = tmp_path / 'a', tmp_path / 'b'
+    base = [sys.executable, str(SCRIPT), '--layout', 'random', '--seed', '7']
+    subprocess.run(base + ['--out', str(a)], capture_output=True, check=True)
+    subprocess.run(base + ['--out', str(b), '--setup-sheet'], capture_output=True, check=True)
+    ta, tb = _tree_bytes(a), _tree_bytes(b)
+    assert not any('setup_' in k for k in ta)
+    extra = set(tb) - set(ta)
+    assert extra == {'seed_0007/truth/setup_sheet.md', 'seed_0007/truth/setup_plan.png'}
+    assert all(tb[k] == v for k, v in ta.items())            # nothing else changed
+
+
+def test_setup_sheet_matches_truth(tmp_path):
+    cfg = config.resolve(config.load_config())
+    lay = layout_mod.random_layout(cfg, 7)
+    md = layout_mod.setup_sheet(cfg, lay, tmp_path)
+    assert md.parent == tmp_path / lay['name'] / 'truth'
+    text = md.read_text()
+    t = layout_mod.truth(cfg, lay)
+    rows = {}
+    for line in text.splitlines():
+        cells = [c.strip() for c in line.strip('|').split('|')]
+        if len(cells) == 9 and cells[1][:1] in 'BC' and cells[1][1:].isdigit():
+            rows[cells[1]] = cells
+    assert len(rows) == len(t['obstacles'])
+    xs = [int(r[3]) for r in rows.values()]
+    assert xs == sorted(xs)                                  # sorted by x
+    seen = {'boulder': 0, 'crater': 0}
+    for o in t['obstacles']:
+        k = o['type']
+        seen[k] += 1
+        idx = seen[k]
+        r = rows[f'{k[0].upper()}{idx}']
+        assert abs(int(r[3]) - o['position'][0] * 100) <= 0.5 + 1e-6
+        assert abs(int(r[4]) - o['position'][1] * 100) <= 0.5 + 1e-6
+        assert abs(int(r[5]) - o['radius'] * 200) <= 0.5 + 1e-6
+        if k == 'crater':
+            assert abs(float(r[7]) - o['depth'] * 100) <= 0.05 + 1e-6
+            assert abs(float(r[8]) - o['rim'] * 100) <= 0.05 + 1e-6
+        else:
+            assert abs(int(r[6]) - o['height'] * 100) <= 0.5 + 1e-6
+    sp = t['start_pose']
+    assert f'x = {round(sp["x"] * 100)} cm, y = {round(sp["y"] * 100)} cm' in text
+    assert 'west and south walls meet' in text
+
+
+def test_setup_sheet_deterministic_and_markers(tmp_path):
+    cfg = config.resolve(config.load_config())
+    lay = layout_mod.random_layout(cfg, 7)
+    p1 = layout_mod.setup_sheet(cfg, lay, tmp_path / '1', markers=True)
+    p2 = layout_mod.setup_sheet(cfg, lay, tmp_path / '2', markers=True)
+    assert p1.read_bytes() == p2.read_bytes()
+    png = 'setup_plan.png'
+    assert (p1.parent / png).read_bytes() == (p2.parent / png).read_bytes()
+    assert 'ArUco markers' in p1.read_text()
+    p3 = layout_mod.setup_sheet(cfg, lay, tmp_path / '3')
+    assert 'ArUco markers' not in p3.read_text()

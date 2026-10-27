@@ -47,13 +47,16 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`; without it, or with a wrong dictionary name, the CLI prints an error to stderr and exits non-zero) |
 | `--config FILE` | `arena.yaml` override (default: the packaged one) |
 | `--marker-preset NAME` | `frame_inner` (start zone's inner edges, default) or `perimeter_walls` (the west and south walls). The rule text allows both readings; see `arena.yaml` |
+| `--setup-sheet` | also writes `truth/setup_sheet.md` (tape-measure checklist: every obstacle sorted by x, in cm from the west-south inner corner; start pose, column, markers, pre-run checks) and `truth/setup_plan.png` (labelled plan, 50 cm grid) so a physical mock arena can copy the same layout. Nothing else changes. Reveals obstacle positions, so it stays with the truth |
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
 | `--vary-appearance` | off by default. Seeded change of the look only: light level, key direction, ambient, colour temperature, sand tint/brightness/contrast, rock palette, wall colour. Geometry, collision, layout and truth stay byte-identical. Ranges (all ASSUMED) in `arena.yaml` `appearance:` |
 | `--appearance-seed K` | seed for the look only (implies `--vary-appearance`); default is the layout seed, so "seed 7" stays one fixed scene |
 
-Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m). The posts are real obstacles: the randomiser and all path checks (and the truth paths) always keep room for the configured preset's posts, with or without `--markers`.
+Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). A smaller mock arena should use a custom `--config` (rocks and craters do not scale down).
+
+Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m). The posts are real obstacles: the randomiser and all path checks (and the truth paths) always keep room for the configured preset's posts, with or without `--markers`.
 
 CLI messages go to stderr: `warning [name]` = a hard problem (overlapping obstacles, an obstacle centre outside the arena, no path), `info [name]` = a deviation from the rulebook or our margins only, such as a crater rim reaching past a wall (the schematic prints a few of these: it is the organiser's drawing). Obstacles keep `randomiser.start_zone_margin` / `construction_zone_margin` (in `arena.yaml`) from those zones.
 
