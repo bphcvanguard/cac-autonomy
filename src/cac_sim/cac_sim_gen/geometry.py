@@ -338,6 +338,100 @@ def build_terrain(cfg, layout, seed, res=0.05, fine_res=0.015, max_triangles=800
     return Mesh(vertices=v, faces=f, uvs=terrain_uv(x, y, seed), normals=_vertex_normals(v, f))
 
 
+# ---------------------------------------------------------------------------------------------
+# Sand collision as flat box tiles + crater mesh patches (sand.collision: tiles)
+# ---------------------------------------------------------------------------------------------
+
+PATCH_MARGIN = 0.05   # m added to crater_outer_radius() for the square crater patch
+
+
+def _max_rect(mask):
+    """Largest all-True axis-aligned rectangle of a 2-D bool array: (area, i0, j0, i1, j1).
+
+    Histogram-stack method over rows i; i1/j1 exclusive. Ties: first found (deterministic).
+    """
+    nx, ny = mask.shape
+    h = np.zeros(ny, dtype=np.int64)
+    best = (0, 0, 0, 0, 0)
+    for i in range(nx):
+        h = np.where(mask[i], h + 1, 0)
+        stack = []                       # (start column, height)
+        for j in range(ny + 1):
+            hj = int(h[j]) if j < ny else 0
+            start = j
+            while stack and stack[-1][1] >= hj:
+                s, sh = stack.pop()
+                area = sh * (j - s)
+                if area > best[0]:
+                    best = (area, i + 1 - sh, s, i + 1, j)
+                start = s
+            if hj:
+                stack.append((start, hj))
+    return best
+
+
+def _greedy_rects(mask):
+    """Cover the True cells of `mask` exactly once with few rectangles (greedy largest-first)."""
+    m = mask.copy()
+    out = []
+    while m.any():
+        _a, i0, j0, i1, j1 = _max_rect(m)
+        out.append((i0, j0, i1, j1))
+        m[i0:i1, j0:j1] = False
+    return out
+
+
+def sand_collision_tiles(cfg, layout, seed, res=0.08, margin=PATCH_MARGIN):
+    """Split the sand collision into flat boxes and crater mesh patches, on one `res` grid.
+
+    The grid is the same as build_terrain(res, res) (the old whole-arena collision mesh). A cell
+    is a crater-patch cell if it touches the square of half-size crater_outer_radius + `margin`
+    around any crater; every other cell is flat. Flat cells are merged greedily into rectangles.
+
+    Returns (rects, patch): rects = [(x0, y0, x1, y1)] in metres (box tops at z = 0), patch = Mesh
+    of the patch cells (or None without craters). Patch heights are the crater profile WITHOUT
+    the tilled relief, so every patch vertex outside all craters' outer radii, including every
+    patch-border vertex, is exactly z = 0 and meets the box tops with no step.
+    """
+    W, H = (float(s) for s in cfg['arena']['size'])
+    nx = max(1, int(math.ceil(W / res - 1e-9)))
+    ny = max(1, int(math.ceil(H / res - 1e-9)))
+    dx, dy = W / nx, H / ny
+    xs = np.arange(nx + 1) * dx
+    ys = np.arange(ny + 1) * dy
+    xs[-1], ys[-1] = W, H
+    patch_mask = np.zeros((nx, ny), dtype=bool)
+    for i in range(len(layout.get('craters') or [])):
+        p = crater_params(cfg, layout, i, seed)
+        cx, cy = p['position']
+        s = p['outer_radius'] + margin
+        ix = (xs[1:] > cx - s) & (xs[:-1] < cx + s)
+        iy = (ys[1:] > cy - s) & (ys[:-1] < cy + s)
+        patch_mask |= np.outer(ix, iy)
+    rects = [(float(xs[i0]), float(ys[j0]), float(xs[i1]), float(ys[j1]))
+             for i0, j0, i1, j1 in _greedy_rects(~patch_mask)]
+    if not patch_mask.any():
+        return rects, None
+    keys, tris = {}, []
+
+    def vid(a, b):
+        return keys.setdefault((a, b), len(keys))
+    for i, j in zip(*np.nonzero(patch_mask)):
+        v00, v10, v01, v11 = vid(i, j), vid(i + 1, j), vid(i, j + 1), vid(i + 1, j + 1)
+        if (i + j) % 2:          # same diagonals as build_terrain's plain cells
+            tris += [(v00, v10, v11), (v00, v11, v01)]
+        else:
+            tris += [(v00, v10, v01), (v10, v11, v01)]
+    lat = np.array(list(keys), dtype=np.int64)
+    x, y = xs[lat[:, 0]], ys[lat[:, 1]]
+    flat_cfg = {**cfg, 'sand': {**cfg['sand'], 'tilled_roughness': 0.0}}
+    z = surface_height(flat_cfg, layout, x, y, seed)
+    v = np.column_stack([x, y, z])
+    f = np.asarray(tris, dtype=np.int64)
+    return rects, Mesh(vertices=v, faces=f, uvs=terrain_uv(x, y, seed),
+                       normals=_vertex_normals(v, f))
+
+
 UV_WARP = 0.025      # m per warp wave (3 waves per axis): breaks the 1 m texture-repeat grid
 
 

@@ -178,14 +178,48 @@ def _pipes(cfg):
     return out
 
 
-def _terrain(cfg):
+def _sand_surface(mu):
+    return (f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode></friction>'
+            '</surface>')
+
+
+def sand_collision_mode(cfg):
+    """`sand.collision` from arena.yaml: 'mesh' (default) or 'tiles'. Raises ValueError."""
+    mode = cfg['sand'].get('collision', 'mesh')
+    if mode not in ('tiles', 'mesh'):
+        raise ValueError(f"sand.collision must be 'tiles' or 'mesh', got {mode!r}")
+    return mode
+
+
+def _terrain(cfg, rects=None, patch=True):
+    """Sand model: visual mesh + collision.
+
+    mode 'mesh' (rects None): one collision mesh over the whole arena. gz-sim 8 drops <surface>
+    on mesh collisions, so the friction is inert (DART default mu 1.0).
+    mode 'tiles': one static box per rect (top at z = 0, down to -sand_depth), each carrying the
+    friction, plus the crater patch mesh when `patch` (friction inert on it, as above).
+    """
     mu = cfg['terrain']['friction']
+    surf = _sand_surface(mu)
+    if rects is None:
+        col = ('<collision name="collision">'
+               f'{_mesh_geom("meshes/terrain_collision.obj")}{surf}</collision>')
+    else:
+        d = float(cfg['arena']['sand_depth'])
+
+        def g9(*v):          # 9 digits: tile edges meet each other and the patch to < 1 um
+            return ' '.join(f'{x:.9g}' for x in v)
+        col = ''.join(
+            f'<collision name="sand_tile_{k}">'
+            f'<pose>{g9((x0 + x1) / 2, (y0 + y1) / 2, -d / 2)} 0 0 0</pose>'
+            f'<geometry><box><size>{g9(x1 - x0, y1 - y0, d)}</size></box></geometry>'
+            f'{surf}</collision>'
+            for k, (x0, y0, x1, y1) in enumerate(rects))
+        if patch:
+            col += ('<collision name="crater_patches">'
+                    f'{_mesh_geom("meshes/terrain_collision.obj")}{surf}</collision>')
     return ('<model name="terrain"><static>true</static><pose>0 0 0 0 0 0</pose><link name="link">'
-            '<collision name="collision">'
-            f'{_mesh_geom("meshes/terrain_collision.obj")}'
-            f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode></friction>'
-            '</surface>'
-            '</collision>'
+            f'{col}'
             f'<visual name="visual">{_mesh_geom("meshes/terrain.obj")}'
             f'{_tex_material("materials/sand.png", 0.97, "materials/sand_normal.png")}'
             '</visual></link></model>')
@@ -412,8 +446,18 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
 
     terrain = geometry.build_terrain(cfg, layout, seed, VISUAL_RES, FINE_RES)
     geometry.write_obj(root / 'meshes' / 'terrain.obj', terrain, mtl_name='sand')
-    coarse = geometry.build_terrain(cfg, layout, seed, COLLISION_RES, COLLISION_RES)
-    geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse, mtl_name='sand')
+    if sand_collision_mode(cfg) == 'mesh':
+        coarse = geometry.build_terrain(cfg, layout, seed, COLLISION_RES, COLLISION_RES)
+        geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse, mtl_name='sand')
+        terrain_model = _terrain(cfg)
+    else:
+        rects, patch = geometry.sand_collision_tiles(cfg, layout, seed, COLLISION_RES)
+        if patch is not None:
+            geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', patch, mtl_name='sand')
+        else:                       # no craters: no mesh collision at all (drop a stale one)
+            for stale in ('terrain_collision.obj', 'terrain_collision.mtl'):
+                (root / 'meshes' / stale).unlink(missing_ok=True)
+        terrain_model = _terrain(cfg, rects, patch is not None)
     if app:
         geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
                               albedo=app['sand_albedo'], contrast=app['sand_contrast'])
@@ -430,7 +474,7 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     geometry.rock_normal_map(root / 'materials' / 'rock_normal.png', seed, 512)
 
     yaw_rng = np.random.default_rng([seed, 7])    # own stream: boulder yaw
-    models = [_terrain(cfg), _floor(cfg), *_hall_floor(cfg),
+    models = [terrain_model, _floor(cfg), *_hall_floor(cfg),
               *_walls(cfg, appearance_mod.wall_rgb(WALL_RGB, app) if app else WALL_RGB),
               *_pipes(cfg),
               _column(cfg)]

@@ -135,14 +135,26 @@ situational_cameras:
 sand:
   albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
   tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
+  # Sand COLLISION shape (the visual mesh is the same either way). gz-sim 8 drops <surface> on
+  # mesh collisions, so terrain.friction only works on primitive shapes:
+  #   tiles (default): flat sand = a few static boxes (top z = 0) that carry terrain.friction; each
+  #     crater = a square mesh patch out to its outer radius + 5 cm (friction INERT there). The
+  #     tilled relief is visual only: the collision is flat outside the crater bowls. Costs some
+  #     physics time (a cylinder wheel gets 2 contacts on a box vs 1 on the mesh): headless uncapped
+  #     RTF -8 % (schematic) to -20 % (dense seed), still ~6.5x real time on 2 CPU cores.
+  #   mesh: one collision mesh over the whole arena, tilled relief included; friction INERT
+  #     everywhere (DART default mu 1.0). Slightly faster physics.
+  #   Override per run: generate_arena --sand-collision mesh
+  collision: tiles
 
 terrain:
   # ASSUMED: Coulomb mu = mu2 of rubber/plastic wheels on dry loose sand. The sand's own shear
   # strength caps it: internal friction angle ~30-35 deg -> tan ~0.58-0.70 (Wong, Theory of Ground
   # Vehicles). Net traction of tyres on dry sand is lower, ~0.3-0.5. 0.5 sits in that band.
-  # INERT IN GZ-SIM 8: the physics system builds mesh collisions with AttachMeshShape and drops
-  # <surface>, so the sand is DART's default mu 1.0 whatever this says. DART takes the MIN of the
-  # two surfaces, so the robot's wheel <mu> sets the friction. Measured: README "How the sand drives".
+  # INERT with sand.collision: mesh and inside crater patches: gz-sim 8 builds mesh
+  # collisions with AttachMeshShape and drops <surface>, so there the sand is DART's default mu
+  # 1.0. EFFECTIVE on flat sand with sand.collision: tiles (the boxes carry it). DART takes the MIN
+  # of the two surfaces' mu. Measured: README "How the sand drives".
   friction: 0.5
 
 situational_camera_sensor:

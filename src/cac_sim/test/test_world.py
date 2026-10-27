@@ -6,7 +6,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-from cac_sim_gen import config, layout as layout_mod, markers as markers_mod, world
+from cac_sim_gen import config, geometry, layout as layout_mod, markers as markers_mod, world
+import numpy as np
 import pytest
 import yaml
 
@@ -184,19 +185,30 @@ def test_lighting_and_hall_floor(tmp_path):
             assert not (inside_x and inside_y), f'{m.get("name")} within 0.3 m of the arena'
 
 
-def test_terrain_sdf_carries_configured_friction(tmp_path):
-    """The sand collision emits terrain.friction as mu = mu2 (inert in gz-sim 8: arena.yaml)."""
+@pytest.mark.parametrize('mode', ['tiles', 'mesh'])
+def test_terrain_sdf_carries_configured_friction(tmp_path, mode):
+    """Every sand collision emits terrain.friction as mu = mu2.
+
+    Effective on the tiles' boxes; inert on mesh collisions in gz-sim 8 (arena.yaml).
+    """
     cfg = config.load_config()
     cfg['terrain']['friction'] = 0.37
-    root = world.write_world(cfg, config.empty_layout(cfg), tmp_path)
+    cfg['sand']['collision'] = mode
+    root = world.write_world(cfg, config.load_layout('schematic'), tmp_path)
     w = ET.parse(root / 'arena.sdf').getroot().find('world')
     terrain = [m for m in w.findall('model') if m.get('name') == 'terrain']
     assert len(terrain) == 1
-    ode = terrain[0].find('link/collision/surface/friction/ode')
-    assert ode is not None
-    assert float(ode.findtext('mu')) == pytest.approx(0.37)
-    assert float(ode.findtext('mu2')) == pytest.approx(0.37)
+    cols = terrain[0].findall('link/collision')
+    assert cols
+    for c in cols:
+        ode = c.find('surface/friction/ode')
+        assert ode is not None, c.get('name')
+        assert float(ode.findtext('mu')) == pytest.approx(0.37)
+        assert float(ode.findtext('mu2')) == pytest.approx(0.37)
+    boxes = [c for c in cols if c.find('geometry/box') is not None]
+    assert len(boxes) == (len(cols) - 1 if mode == 'tiles' else 0)
     assert config.load_config()['terrain']['friction'] == pytest.approx(0.5)
+    assert config.load_config()['sand']['collision'] == 'tiles'   # the shipped default
 
 
 def test_marker_geometry_lives_in_markers_module():
@@ -323,18 +335,186 @@ GOLDEN_SDF_SHA256 = {
     # 2026-10-27: denser fields with obstacles biased onto the rover's routes (intentional)
     # 2026-10-27: terrain.friction 0.9 -> 0.5 (dry-sand estimate); only the terrain <mu>/<mu2>
     # bytes differ (checked by substituting 0.9 back: old hash reproduced). Inert in gz-sim 8.
+    # 2026-10-28: sand.collision added; these are the 'mesh' mode bytes (no longer the default).
     ('random', '3'): 'bdd551f87c4fa6cf15f8f79ba31edac8865e8343b27ee496bee0b62ebea350fa',
     ('schematic', None): '1e5e39453a97d0ea7ec360ffd839c427dfa58fbc21bb4ce8c50e2c992429aab2',
 }
+# --sand-collision tiles = the DEFAULT since 2026-10-28: only the terrain <collision> elements
+# differ from mesh mode; the visual mesh, textures and truth are byte-identical
+# (test_tiles_change_only_...).
+GOLDEN_SDF_SHA256_TILES = {
+    ('random', '3'): '4cc7b7a172e97f9402d8b62fedecc4b7623d31bf391db91b96727667b6b77077',
+    ('schematic', None): '7ae982d5bb52ab5aaabb2bafd16f5cd121258c3e4206bc5d96a461345655e09e',
+}
 
 
+@pytest.mark.parametrize('mode', ['mesh', 'tiles'])
 @pytest.mark.parametrize('layout,seed', list(GOLDEN_SDF_SHA256))
-def test_default_output_matches_golden(tmp_path, layout, seed):
-    args = ['--layout', layout, '--out', str(tmp_path)] + (['--seed', seed] if seed else [])
+def test_default_output_matches_golden(tmp_path, layout, seed, mode):
+    args = ['--layout', layout, '--out', str(tmp_path), '--sand-collision', mode]
+    args += ['--seed', seed] if seed else []
     subprocess.run([sys.executable, str(SCRIPT), *args], check=True, capture_output=True)
     name = f'seed_{int(seed):04d}' if seed else layout
     digest = hashlib.sha256((tmp_path / name / 'arena.sdf').read_bytes()).hexdigest()
-    assert digest == GOLDEN_SDF_SHA256[(layout, seed)]
+    golden = GOLDEN_SDF_SHA256_TILES if mode == 'tiles' else GOLDEN_SDF_SHA256
+    assert digest == golden[(layout, seed)]
+
+
+def test_default_sand_collision_is_tiles(tmp_path):
+    """Without the flag the arena uses tiles (friction effective on flat sand)."""
+    args = ['--layout', 'schematic', '--out', str(tmp_path)]
+    subprocess.run([sys.executable, str(SCRIPT), *args], check=True, capture_output=True)
+    digest = hashlib.sha256((tmp_path / 'schematic' / 'arena.sdf').read_bytes()).hexdigest()
+    assert digest == GOLDEN_SDF_SHA256_TILES[('schematic', None)]
+
+
+# ----------------------------------------------------------------------------- sand collision
+
+def _sand_collision(root):
+    """(boxes [(x0, y0, x1, y1, z_top, z_bottom)], patch triangles (M, 3, 3) or None)."""
+    w = ET.parse(root / 'arena.sdf').getroot().find('world')
+    link = [m for m in w.findall('model') if m.get('name') == 'terrain'][0].find('link')
+    boxes, patch = [], None
+    for c in link.findall('collision'):
+        if c.find('geometry/box') is not None:
+            x, y, z = (float(v) for v in c.findtext('pose').split()[:3])
+            sx, sy, sz = (float(v) for v in c.findtext('geometry/box/size').split())
+            boxes.append((x - sx / 2, y - sy / 2, x + sx / 2, y + sy / 2, z + sz / 2, z - sz / 2))
+        else:
+            assert c.findtext('geometry/mesh/uri').strip() == 'meshes/terrain_collision.obj'
+            lines = (root / 'meshes' / 'terrain_collision.obj').read_text().splitlines()
+            v = np.array([[float(t) for t in ln.split()[1:]] for ln in lines
+                          if ln.startswith('v ')])
+            f = np.array([[int(t.split('/')[0]) - 1 for t in ln.split()[1:]] for ln in lines
+                          if ln.startswith('f ')])
+            patch = v[f]
+    return boxes, patch
+
+
+def _in_triangles(px, py, tri):
+    """Bool (P,): point inside (or on) the xy projection of any triangle."""
+    a, b, c = tri[:, 0, :2], tri[:, 1, :2], tri[:, 2, :2]
+    p = np.stack([px, py], axis=1)[:, None, :]
+
+    def cross(o, u, q):
+        return (u[..., 0] - o[..., 0]) * (q[..., 1] - o[..., 1]) - \
+            (u[..., 1] - o[..., 1]) * (q[..., 0] - o[..., 0])
+    d1, d2, d3 = cross(a, b, p), cross(b, c, p), cross(c, a, p)
+    neg = (d1 < -1e-9) | (d2 < -1e-9) | (d3 < -1e-9)
+    pos = (d1 > 1e-9) | (d2 > 1e-9) | (d3 > 1e-9)
+    return (~(neg & pos)).any(axis=1)
+
+
+TILE_LAYOUTS = [('schematic', None), ('empty', None), ('crater_field', None),
+                ('busy_dig', None), ('random', 3), ('random', 16)]
+
+
+def _tile_world(cfg, tmp_path, name, seed):
+    cfg['sand']['collision'] = 'tiles'
+    if name == 'random':
+        lay = layout_mod.random_layout(cfg, seed)
+    elif name == 'empty':
+        lay = config.empty_layout(cfg)
+    else:
+        lay = config.load_layout(name)
+    return lay, world.write_world(cfg, lay, tmp_path)
+
+
+@pytest.mark.parametrize('name,seed', TILE_LAYOUTS)
+def test_tiles_cover_flat_sand_exactly_once(tmp_path, name, seed):
+    """Every 10 cm grid point is under exactly one box top at z = 0, or in a crater patch."""
+    cfg = config.load_config()
+    lay, root = _tile_world(cfg, tmp_path, name, seed)
+    boxes, patch = _sand_collision(root)
+    L, W = cfg['arena']['size']
+    d = cfg['arena']['sand_depth']
+    for x0, y0, x1, y1, top, bottom in boxes:
+        assert top == pytest.approx(0.0, abs=1e-9) and bottom == pytest.approx(-d, abs=1e-9)
+        assert -1e-7 <= x0 < x1 <= L + 1e-7 and -1e-7 <= y0 < y1 <= W + 1e-7
+    gx, gy = np.meshgrid(np.arange(0.0, L + 1e-9, 0.1), np.arange(0.0, W + 1e-9, 0.1),
+                         indexing='ij')
+    gx, gy = gx.ravel(), gy.ravel()
+    in_box = np.zeros(gx.shape, dtype=int)
+    for x0, y0, x1, y1, _t, _b in boxes:       # half-open, so a seam point counts once
+        in_box += ((gx >= x0 - 1e-6) & (gx < x1 - 1e-6) | (gx >= L - 1e-6) & (x1 >= L - 1e-6)) & \
+            ((gy >= y0 - 1e-6) & (gy < y1 - 1e-6) | (gy >= W - 1e-6) & (y1 >= W - 1e-6))
+    in_patch = np.zeros(gx.shape, dtype=bool) if patch is None else _in_triangles(gx, gy, patch)
+    # a point on a box/patch seam is legitimately both; otherwise exactly one
+    assert ((in_box == 1) | in_patch).all(), 'uncovered sand'
+    assert (in_box <= 1).all(), 'overlapping boxes'
+    interior = np.ones(gx.shape, dtype=bool)
+    if patch is not None:
+        lo, hi = patch[..., :2].min(axis=1), patch[..., :2].max(axis=1)
+        strict = np.zeros(gx.shape, dtype=bool)
+        for (ax, ay), (bx, by) in zip(lo, hi):
+            strict |= (gx > ax + 1e-6) & (gx < bx - 1e-6) & (gy > ay + 1e-6) & (gy < by - 1e-6)
+        assert not (strict & (in_box > 0)).any(), 'box overlaps a crater patch'
+        interior = ~strict
+    # every crater, out to its outer radius, is patch (mesh), never box
+    for i in range(len(lay['craters'])):
+        p = geometry.crater_params(cfg, lay, i, lay.get('seed') or 0)
+        cx, cy = p['position']
+        near = np.hypot(gx - cx, gy - cy) <= p['outer_radius']
+        assert in_patch[near].all() and not (in_box[near & interior] > 0).any()
+    # areas add up to the arena: no gaps, no overlaps
+    area = sum((x1 - x0) * (y1 - y0) for x0, y0, x1, y1, _t, _b in boxes)
+    if patch is not None:
+        e1, e2 = patch[:, 1, :2] - patch[:, 0, :2], patch[:, 2, :2] - patch[:, 0, :2]
+        area += 0.5 * np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]).sum()
+        # the patch border meets the box tops: every vertex outside all outer radii is z = 0
+        v = patch.reshape(-1, 3)
+        out = np.ones(len(v), dtype=bool)
+        for i in range(len(lay['craters'])):
+            p = geometry.crater_params(cfg, lay, i, lay.get('seed') or 0)
+            out &= np.hypot(v[:, 0] - p['position'][0], v[:, 1] - p['position'][1]) > \
+                p['outer_radius']
+        assert out.any() and np.abs(v[out, 2]).max() < 1e-4
+    else:
+        assert not lay['craters']
+    assert area == pytest.approx(L * W, abs=1e-3)
+
+
+def test_tile_count_bounded(tmp_path):
+    """Greedy merge keeps the box count small on every shipped and random layout."""
+    cfg = config.load_config()
+    names = ('schematic', 'gate', 'column_pinch', 'crater_field', 'busy_dig', 'start_trap')
+    lays = [config.load_layout(n) for n in names]
+    lays += [layout_mod.random_layout(cfg, s) for s in range(1, 21)]
+    counts = []
+    for lay in lays:
+        rects, patch = geometry.sand_collision_tiles(cfg, lay, lay.get('seed') or 0)
+        counts.append(len(rects))
+        assert (patch is None) == (not lay['craters'])
+    assert max(counts) <= 40, counts
+    assert len(geometry.sand_collision_tiles(cfg, config.empty_layout(cfg), 0)[0]) == 1
+
+
+def test_tiles_change_only_the_collision(tmp_path):
+    """Tiles vs mesh: visual mesh, rocks, textures and truth are byte-identical."""
+    cfg = config.load_config()
+    lay = layout_mod.random_layout(cfg, 3)
+    cfg['sand']['collision'] = 'tiles'
+    a = world.write_world(cfg, lay, tmp_path / 'tiles')
+    cfg_m = config.load_config()
+    cfg_m['sand']['collision'] = 'mesh'
+    b = world.write_world(cfg_m, lay, tmp_path / 'mesh')
+    fa = sorted(p.relative_to(a) for p in a.rglob('*') if p.is_file())
+    assert fa == sorted(p.relative_to(b) for p in b.rglob('*') if p.is_file())
+    differ = {str(f) for f in fa if not filecmp.cmp(a / f, b / f, shallow=False)}
+    assert differ == {'arena.sdf', 'meshes/terrain_collision.obj'}
+    bad = config.load_config()
+    bad['sand']['collision'] = 'heightmap'
+    with pytest.raises(ValueError):
+        world.write_world(bad, lay, tmp_path / 'bad')
+
+
+def test_tiles_without_craters_have_no_mesh_collision(tmp_path):
+    cfg = config.load_config()
+    cfg['sand']['collision'] = 'tiles'
+    root = world.write_world(cfg, config.empty_layout(cfg), tmp_path)
+    boxes, patch = _sand_collision(root)
+    assert len(boxes) == 1 and patch is None
+    assert not (root / 'meshes' / 'terrain_collision.obj').exists()
 
 
 # ----------------------------------------------------------------------------- set-up sheet

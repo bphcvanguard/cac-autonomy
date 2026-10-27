@@ -63,6 +63,7 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
+| `--sand-collision mesh\|tiles` | override `sand.collision` (default `tiles`: flat sand is boxes that honour `terrain.friction`). `mesh`: one collision mesh, friction inert, 8-20 % faster physics. See "How the sand drives" |
 | `--vary-appearance` | off by default. Seeded change of the look only: light level, key direction, ambient, colour temperature, sand tint/brightness/contrast, rock palette, wall colour. Geometry, collision, layout and truth stay byte-identical. Ranges (all ASSUMED) in `arena.yaml` `appearance:` |
 | `--appearance-seed K` | seed for the look only (implies `--vary-appearance`); default is the layout seed, so "seed 7" stays one fixed scene |
 
@@ -141,19 +142,34 @@ Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for 
 
 ## How the sand drives (measured in this sim)
 
-**The arena's sand friction does nothing in Gazebo Harmonic (gz-sim 8, dartsim).** The physics
-system builds mesh collisions with `AttachMeshShape`, which drops `<surface>`. So the sand is DART's
-default mu 1.0 whatever `terrain.friction` says. DART takes the smaller mu of the two surfaces, so
-**the robot's wheel `<mu>` sets the friction.** Checked by tilting gravity to tan 0.5. Boxes sat still
-on the sand mesh at sand mu 0.3. They slid at box mu 0.3, and on a primitive box floor at mu 0.3.
-`terrain.friction` (0.5, the dry-sand estimate) is still written to the SDF in case that changes.
+**On a mesh, sand friction does nothing in Gazebo Harmonic (gz-sim 8, dartsim).** The
+physics system builds mesh collisions with `AttachMeshShape`, which drops `<surface>`. So the sand
+mesh is DART's default mu 1.0 whatever `terrain.friction` says. DART takes the smaller mu of the two
+surfaces, so **the robot's wheel `<mu>` sets the friction.** Checked by tilting gravity to tan 0.5.
+Boxes (mu 1.0) sat still on the sand mesh at sand mu 0.3. They slid at box mu 0.3, and on a
+primitive box floor at mu 0.3.
 
 What dartsim does honour (tested): `<mu>`, `<mu2>`, `<fdir1>`, and `<slip1>`/`<slip2>`
 (creep = slip x force, exactly). It honours them on primitive shapes, and on the robot's own
-wheels. Nothing on the sand mesh is honoured.
+wheels. Nothing on a mesh is honoured.
+
+**So the arena uses `sand.collision: tiles` by default, which makes the friction work on flat
+sand.** Flat sand becomes 8-27 static boxes, top at z = 0, that carry `terrain.friction`.
+Each crater is a mesh patch out to its outer radius + 5 cm. Friction is still inert on the patches
+(mu 1.0 there). The tilled relief (+/- 1.2 cm) is dropped from the collision: it stays in the
+picture only. Tilt test, tan 0.5, box mu 1.0: on tiles the boxes slide at sand mu 0.3 and hold at
+sand mu 0.9. On mesh mode (`--sand-collision mesh`) they hold at both.
+
+It costs some physics time, which is why `--sand-collision mesh` is still offered. A cylinder wheel gets 2 contact points on a
+box and 1 on the mesh. Rover shuttling, headless, 2 pinned cores, software GL, 3 runs each,
+uncapped RTF: schematic 7.2 (tiles) vs 7.8 (mesh), -8 %; dense seed 16 6.5 vs 8.2, -20 %. Capped,
+both hold RTF 1.00. `<max_contacts>` is not honoured, and the bullet collision detector does not fix
+it either.
 
 Test rover (scratch only, not in this package): 0.6 x 0.3 m, 18.4 kg, 4 wheels r 0.08 m,
 wheelbase 0.40 m, track 0.36 m, gz `DiffDrive` skid-steer, 5 N m per wheel.
+
+Mesh collision (`--sand-collision mesh`), sand mu inert, so the effective mu is the wheel mu:
 
 | Run | Odometry vs truth |
 |---|---|
@@ -167,17 +183,42 @@ wheelbase 0.40 m, track 0.36 m, gz `DiffDrive` skid-steer, 5 N m per wheel.
 With wheel mu 0.5, or with 0.4 / 0.6, the rover drove out of the 11 cm crater from its centre and
 turned in place inside it.
 
+`tiles` collision, sand mu 0.5 (now effective on flat sand):
+
+| Run | Odometry vs truth |
+|---|---|
+| Straight 4 m at 0.2 m/s, flat, wheel mu 0.5 or 1.0 | 0.00 % distance, 0.0 deg heading |
+| Straight 4 m across the 50 cm crater | 0.3 % distance, 0.5 deg heading (the in-place turn after it: 61 deg, marginal) |
+| 360 deg in place, wheel mu 1.0 or 0.5, or sand mu 0.3 / 0.9 | rover does not turn (0 deg); odometry says 360 deg (wheels spin) |
+| 360 deg in place, wheel mu 0.4 sideways / 0.6 rolling (`fdir1` = axle) | turns 316 deg; odometry says 360 deg |
+| 360 deg in place, wheelbase 0.30 < track 0.40, wheel mu 1.0 | turns 247 deg (on the mesh: 29 deg) |
+
+So no: with isotropic friction the test rover still does not turn in place, at any mu. That is plain
+Coulomb physics, not a sim bug. Its wheelbase (0.40 m) is longer than its track (0.36 m), so the
+sideways scrub of the wheels has a longer lever than the drive force, at any shared mu. The
+wide-track rover does turn. The old "turns 150 deg at wheel mu 0.5" came from the mesh's single
+contact point per wheel.
+
+Seams (tiles): a 7.6 m diagonal drive (13.7 deg) across 3 box-box seams, 4 box-patch seams and two
+craters, at 0.2 and 0.5 m/s. On flat sand the body height held at 0.0800 m (spread < 0.1 mm), speed
+0.200 / 0.500 m/s, pitch 0.00 deg: no seam bumps or snags. Through the craters: body dip 4.7-5.5 mm,
+pitch up to 5.4 deg, speed 0.18-0.23 m/s (at 0.2 m/s), the same as the mesh (dip 4.7-7.2 mm, 5.4 deg,
+0.18-0.22 m/s). The rover crossed the full 7.6 m in both modes.
+
 What this means for the robot team:
-- **Straight-line wheel odometry is near perfect in sim (< 0.3 %).** Real dry sand gives ~5-10 %
-  of distance. Coulomb friction alone never makes a flat-ground slip like that. There is no rolling
-  resistance, sinkage or bulldozing in the sim. So localisation tested here will look better than it
-  will be on real sand. Add the error on purpose: a scale error plus heading drift in the odometry
+- **Straight-line wheel odometry is near perfect in sim (< 0.3 %), with either collision.** Real dry
+  sand gives ~5-10 % of distance. Coulomb friction alone never makes a flat-ground slip like that.
+  `tiles` makes the friction coefficient real on flat sand, but there is still no rolling
+  resistance, sinkage, bulldozing or tilled relief under the wheels in the sim. So localisation
+  tested here will look better than it will be on real sand. Add the error on purpose: a scale error plus heading drift in the odometry
   path, or tune the robot-side `gz::sim::systems::WheelSlip` plugin.
 - **Turning in place is where the error shows up.** With the geometric track, the odometry
   overstates in-place yaw by 70-210 deg per turn. Calibrate an effective track, or take yaw from
   the IMU. Real skid-steer robots have the same problem.
-- **Set wheel friction on the robot.** Use `<mu>` about 0.5, or anisotropic, with `<fdir1>` along
-  the axle. At the default mu 1.0, a skid-steer longer than it is wide stalls when it turns in place.
-- **Whether it turns depends on the friction pyramid's orientation.** At wheel mu 0.5 with `<fdir1>`
-  along the axle (isotropic), the rover did not turn at all. Without `<fdir1>` it turned 150 deg.
+- **Set wheel friction on the robot.** A skid-steer longer than it is wide does not turn in place
+  with isotropic friction (on `tiles`, at any mu; on the mesh, at wheel mu 1.0). Use anisotropic
+  friction with `<fdir1>` along the axle: lower `<mu>` sideways than `<mu2>` rolling.
+- **Whether it turns depends on the friction pyramid's orientation and the contact count.** On the
+  mesh at wheel mu 0.5 with `<fdir1>` along the axle (isotropic), the rover did not turn at all.
+  Without `<fdir1>` it turned 150 deg. On `tiles` it did not turn either way.
   Re-measure on the real robot on real sand. These numbers show the shape of the problem only.

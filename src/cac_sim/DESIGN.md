@@ -12,7 +12,8 @@ Output for one layout `<name>` is a self-contained directory:
 <out>/<name>/
   arena.sdf                 Gazebo Harmonic world (SDFormat 1.9+), no network/Fuel includes
   meshes/terrain.obj        visual sand surface, craters carved in, tilled roughness, UVs
-  meshes/terrain_collision.obj   coarser copy for physics
+  meshes/terrain_collision.obj   physics mesh: crater patches only (sand.collision: tiles, absent
+                            with no craters), or the whole arena (sand.collision: mesh)
   meshes/rock_<i>.obj       one mesh per boulder
   meshes/*.mtl              minimal material for every OBJ (else gz logs 'Missing material')
   materials/sand.png, sand_normal.png, rock_<k>.png, rock_normal.png   generated textures
@@ -43,7 +44,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 |---|---|---|
 | `config.py` | integrator | `load_config(path=None) -> dict`, `resolve(cfg, marker_preset=None) -> dict`, `load_layout(path) -> dict`, `empty_layout(cfg)`, `DEFAULT_CONFIG` path |
 | `markers.py` | world | `marker_footprints(cfg)`, `post_circles(cfg) -> [(id, x, y, r)]`, `marker_placement`, `check_markers(cfg)`; shared by `layout.py` and `world.py` (no import cycle) |
-| `geometry.py` | geometry | `surface_height(cfg, layout, x, y, seed) -> ndarray` (vectorised) · `build_terrain(cfg, layout, seed, res, fine_res) -> Mesh` · `rock_mesh(diameter, height, seed, sink=0.04, index=0) -> Mesh` · `crater_params(cfg, layout, i, seed) -> dict` (depth, rim, outer_radius, effective depth after the slope cap) · `write_obj(path, mesh, mtl_name=None)` (with `mtl_name` also writes the sibling `.mtl`) · `write_png(path, img)` · `sand_texture(path, seed, size, albedo)` · `sand_normal_map(...)` · `rock_texture_variants(out_dir, seed, n)` · `rock_normal_map(...)` |
+| `geometry.py` | geometry | `surface_height(cfg, layout, x, y, seed) -> ndarray` (vectorised) · `build_terrain(cfg, layout, seed, res, fine_res) -> Mesh` · `sand_collision_tiles(cfg, layout, seed, res=0.08) -> ([(x0, y0, x1, y1)], Mesh | None)` (flat box rects + crater patch mesh) · `rock_mesh(diameter, height, seed, sink=0.04, index=0) -> Mesh` · `crater_params(cfg, layout, i, seed) -> dict` (depth, rim, outer_radius, effective depth after the slope cap) · `write_obj(path, mesh, mtl_name=None)` (with `mtl_name` also writes the sibling `.mtl`) · `write_png(path, img)` · `sand_texture(path, seed, size, albedo)` · `sand_normal_map(...)` · `rock_texture_variants(out_dir, seed, n)` · `rock_normal_map(...)` |
 | `layout.py` | randomiser | `random_layout(cfg, seed) -> layout` · `check_layout(cfg, layout, strict=True) -> list[str]` (empty = valid) · `path_exists(cfg, layout) -> (bool, list[(x, y)])` (disc) · `se2_path_exists(cfg, layout) -> (bool, list[(x, y, yaw_deg)])` (real footprint, must turn) · `random_start_pose(cfg, rng) -> dict` · `truth(cfg, layout, markers=False) -> dict` · `render_map(cfg, layout, png_path, path=None, markers=False, plan=False)` · `setup_sheet(cfg, layout, out_dir, markers=False) -> Path` (writes the two set-up files into `<out_dir>/<name>/truth/`; deterministic; ids B1.. / C1.. = truth order + 1) |
 | `world.py` | world | `write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False) -> Path` · `check_marker_support(cfg)` (raises `MarkerError`) · `check_markers(cfg)` (rule check) |
 | `appearance.py` | world | `sample(cfg, appearance_seed) -> dict` · `wall_rgb(base, app)` · `light_tint(kelvin)`; opt-in via `write_world(..., vary_appearance=False, appearance_seed=None)`. Changes lights, scene ambient/background, wall colour, `sand.png`, `rock_<k>.png` ONLY; never meshes, collision, layout or truth. Ranges: `appearance:` in `arena.yaml` |
@@ -55,7 +56,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
-               [--config arena.yaml] [--markers] [--marker-preset frame_inner|perimeter_walls]
+               [--config arena.yaml] [--sand-collision mesh|tiles] [--markers] [--marker-preset frame_inner|perimeter_walls]
                [--setup-sheet] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
@@ -83,6 +84,22 @@ exit code 2; no world is written. Truth is generated only with `--out`: it is no
   Stream ids (all distinct; `test_rng_streams_distinct` checks seeds 0..20): layout obstacles `[s, 2]`,
   start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`, appearance variation `[appearance_seed, 70]` (`appearance.py`); geometry: textures 20-26 (sand etc.), crater
   rim `[s, 21, i]`, crater depth `[s, 22, i]`, rock shape `[s, 30, i]`, rock texture variants `[s, 50+k]`.
+- Sand collision (`sand.collision` in `arena.yaml`, default `mesh`; CLI `--sand-collision`). gz-sim 8 (dartsim) builds a
+  mesh collision with `AttachMeshShape` and drops its `<surface>`, so friction only acts on
+  primitive shapes. `tiles`: on the 8 cm collision grid, every cell touching the square of half-size
+  `crater_outer_radius + 5 cm` around a crater is a crater-patch cell; all other cells are flat and
+  are merged greedily (largest rectangle first) into static boxes, top at z = 0, bottom at
+  `-sand_depth` (8-27 boxes on the shipped and random layouts). All boxes are collisions of the one
+  `terrain` link and carry `terrain.friction` as mu = mu2. The patch cells form one mesh
+  (`terrain_collision.obj`, same grid and diagonals as the old collision mesh) with the crater
+  profile but WITHOUT the tilled relief, so every patch-border vertex is exactly z = 0 and meets the
+  box tops: no step or gap a wheel can catch (`geometry.sand_collision_tiles`). Friction is inert on
+  the patches (DART default mu 1.0). The tilled relief (+/- 1.2 cm) is therefore visual only. `mesh`:
+  one whole-arena collision mesh, relief included, friction inert everywhere. The visual
+  mesh, textures, layout and truth are byte-identical in both modes. `mesh` stays the default
+  because `tiles` costs physics time (a cylinder wheel gets 2 contact points on a box, 1 on the
+  mesh): headless uncapped RTF -8 % on the schematic, -20 % on a dense seed; both hold RTF 1.0 on 2
+  cores.
 - Budgets so CPU-only laptops stay real-time: terrain visual <= 80k triangles, collision <= 20k,
   each rock <= 400 triangles (measured max ~216).
 - No network access at generation or load time. No Fuel URIs.

@@ -50,6 +50,9 @@ def main(argv=None):
     ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
     ap.add_argument('--overlay', action='store_true', help='draw zones and target (visual only)')
     ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
+    ap.add_argument('--sand-collision', choices=('mesh', 'tiles'), default=None,
+                    help='override sand.collision in arena.yaml (tiles: flat sand = boxes that '
+                         'honour terrain.friction; README "How the sand drives")')
     ap.add_argument('--vary-appearance', action='store_true',
                     help='seeded lighting/colour variation (appearance: in arena.yaml); '
                          'geometry and truth unchanged')
@@ -61,6 +64,8 @@ def main(argv=None):
     from cac_sim_gen import config, layout as layout_mod, world
     cfg_path = a.config or (share / 'config' / 'arena.yaml' if share else None)
     cfg = config.resolve(config.load_config(cfg_path), a.marker_preset)
+    if a.sand_collision:
+        cfg['sand']['collision'] = a.sand_collision
 
     vary = a.vary_appearance or a.appearance_seed is not None
     layouts = []
