@@ -1,9 +1,10 @@
 name: cac
 
 # dev      laptops with an NVIDIA GPU and the NVIDIA Container Toolkit
-# dev-cpu  every other laptop (Intel/AMD graphics or software rendering)
+# dev-cpu  Intel/AMD graphics (or NVIDIA without the toolkit), through /dev/dri
+# dev-sw   no usable GPU at all (VMs, old PCs): software rendering on the CPU
 # robot    the rover's onboard computer (no GUI)
-# scripts/dev.sh picks dev or dev-cpu for you.
+# scripts/dev.sh picks one for you. Override with CAC_GPU=nvidia|dri|none.
 #
 # The repo is mounted at /workspace, so build/ install/ log/ appear in your clone (gitignored).
 # network_mode: host keeps ROS discovery simple. ipc: host + shm_size help with point clouds.
@@ -51,6 +52,17 @@ services:
       LIBGL_ALWAYS_SOFTWARE: "${CAC_SOFTWARE_GL:-0}"
     devices:
       - /dev/dri:/dev/dri
+    # /dev/dri/renderD* belongs to the host's 'render' group, whose number differs per
+    # machine. dev.sh passes the real numbers so the container user can open the GPU.
+    group_add:
+      - "${CAC_RENDER_GID:-109}"
+      - "${CAC_VIDEO_GID:-44}"
+
+  dev-sw:
+    <<: *dev
+    environment:
+      DISPLAY: "${DISPLAY:-:0}"
+      LIBGL_ALWAYS_SOFTWARE: "1"
 
   robot:
     build:

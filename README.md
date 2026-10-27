@@ -90,11 +90,13 @@ Pick **one** option. Both give you the same tools.
 - Docker Engine + the Compose plugin: https://docs.docker.com/engine/install/ubuntu/
   Then run `sudo usermod -aG docker $USER` and log out and back in, so you can use Docker without `sudo`.
 - *Optional, NVIDIA GPU only:* the NVIDIA Container Toolkit (https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). With it, Gazebo renders on your GPU. Without it, it uses your integrated graphics or the CPU (slower, same results).
+- **No GPU, old GPU or old PC is fine.** See [Slow or old PC](#slow-or-old-pc) below.
 
 **Use it**
 ```bash
 git clone https://github.com/bphcvanguard/cac-autonomy.git && cd cac-autonomy
-./scripts/dev.sh up      # first time builds the image: ~10–20 min, ~5 GB
+./scripts/dev.sh up      # first time builds the image: ~10–40 min, ~7 GB (keep 15 GB free)
+./scripts/dev.sh info    # which graphics mode you got: post this on your onboarding issue
 ./scripts/dev.sh sh      # a shell inside the container, in /workspace (= your clone)
 # inside the container:
 rosdep install --from-paths src --ignore-src -y
@@ -107,13 +109,47 @@ colcon build --symlink-install && source install/setup.bash
 | `./scripts/dev.sh sh` | Opens a shell inside it. Open as many as you like. |
 | `./scripts/dev.sh build` | `colcon build` inside the container |
 | `./scripts/dev.sh test` | Build + test, exactly what CI runs |
+| `./scripts/dev.sh info` | Graphics mode, renderer, CPU cores, RAM, ROS version |
 | `./scripts/dev.sh down` | Stops the container |
 
 **How it works**
 - Your clone is mounted at `/workspace`. You edit files on your laptop with any editor, and build and run inside the container. `build/`, `install/` and `log/` appear in your clone and are gitignored.
 - The container runs as a user with **your** UID, so files it creates are owned by you.
-- `dev.sh` picks the `dev` service (NVIDIA GPU) or `dev-cpu` (everything else) automatically.
+- `dev.sh` picks the graphics mode automatically:
+
+  | Your machine | Mode | Service | Renderer |
+  |---|---|---|---|
+  | NVIDIA GPU + Container Toolkit | `nvidia` | `dev` | Your NVIDIA GPU |
+  | Intel/AMD graphics, or NVIDIA without the toolkit | `dri` | `dev-cpu` | Your integrated/AMD GPU via Mesa |
+  | No `/dev/dri` (VirtualBox/VMware, very old or headless PC) | `none` | `dev-sw` | `llvmpipe`: software rendering on the CPU |
+
+  Force a mode with `CAC_GPU=none ./scripts/dev.sh up` (or `nvidia` / `dri`). `up` switches cleanly if a different mode is already running.
 - GUI apps (Gazebo, RViz, rqt) open on your desktop through X11. `dev.sh up` runs `xhost +local:` to allow this.
+
+### Slow or old PC
+
+Everything in this repo works on a CPU-only laptop. It was tested on **2 CPU cores, 4 GB RAM and no GPU** (software rendering):
+
+| What | Result on 2 cores, no GPU |
+|---|---|
+| `colcon build` + `colcon test` | ✅ ~20 s |
+| Gazebo + RViz windows | ✅ open and run |
+| Simple world, with the Gazebo window | ✅ real time |
+| GPU-LiDAR world, with the Gazebo window | ⚠️ ~0.35× real time (slow but correct) |
+| GPU-LiDAR world, headless (no Gazebo window) | ✅ real time |
+
+**Minimum:** any 64-bit x86 CPU with 2+ cores, 4 GB RAM (8 GB recommended), 15 GB free disk.
+
+**If the sim is slow on your machine:**
+1. **Run Gazebo without its window.** Rendering the 3D view is the expensive part. Run the server only, and look at the robot in RViz or Foxglove instead:
+   ```bash
+   gz sim -s -r --headless-rendering <world>.sdf    # -s = server only; sensors (LiDAR/camera) still work
+   ```
+2. **Old GPU and Gazebo crashes with `OpenGL 3.3 is not supported`:** your GPU is too old for Gazebo's default renderer. Either use the older renderer, `gz sim --render-engine ogre <world>.sdf`, or skip the GPU: `./scripts/dev.sh down && CAC_GPU=none ./scripts/dev.sh up`.
+3. **Low RAM (≤ 8 GB) and `colcon build` freezes the PC:** build fewer packages at once: `colcon build --symlink-install --parallel-workers 1`, and for C++ packages `export MAKEFLAGS=-j2` first.
+4. **Run `./scripts/dev.sh info`.** If it says `llvmpipe` but you do have an Intel/AMD GPU, check that `/dev/dri` exists on your laptop (`ls /dev/dri`). If it doesn't, your graphics driver isn't loaded.
+
+**Worlds must not download models at startup.** Gazebo worlds that `<include>` models from `fuel.gazebosim.org` hang or fail on networks that block it (some do; ours did during testing). Put every model the world needs inside `cac_sim`.
 
 **What's inside the image** (`docker/Dockerfile`, built on `ros:jazzy-ros-base-noble`)
 
@@ -141,6 +177,7 @@ Post a screenshot of these on your onboarding issue:
 - [ ] `colcon build` finishes all 10 packages
 - [ ] `colcon test && colcon test-result --verbose` shows **0 errors, 0 failures**
 - [ ] `ros2 interface show cac_interfaces/msg/BucketState` prints the message
+- [ ] `./scripts/dev.sh info` output (Docker users), so we know who's on software rendering
 - [ ] `gz sim shapes.sdf` opens a Gazebo window with shapes in it
 - [ ] `rviz2` opens a window
 
@@ -172,7 +209,10 @@ Useful commands: `git status` · `git diff` · `git add -p` · `git fetch && git
 |---|---|---|
 | `ros2: command not found` | ROS isn't sourced in this shell | `source /opt/ros/jazzy/setup.bash`. In Docker, open shells with `./scripts/dev.sh sh` (it sources ROS automatically). |
 | `Package 'cac_…' not found` after building | Workspace not sourced | `source install/setup.bash` from the repo root |
-| Gazebo is very slow; `glxinfo -B` says `llvmpipe` | Software rendering (no GPU in the container) | NVIDIA: install the Container Toolkit, then `./scripts/dev.sh down && ./scripts/dev.sh up`. Intel/AMD: make sure `/dev/dri` exists on the host. Slow still works, just slower. |
+| Gazebo is very slow; `./scripts/dev.sh info` says `llvmpipe` | Software rendering (no GPU in the container) | NVIDIA: install the Container Toolkit, then `./scripts/dev.sh down && ./scripts/dev.sh up`. Intel/AMD: make sure `/dev/dri` exists on the host. Either way, see [Slow or old PC](#slow-or-old-pc). |
+| `dev.sh up` fails: `error gathering device information … /dev/dri` | You forced `CAC_GPU=dri` on a machine without a GPU device | `CAC_GPU=none ./scripts/dev.sh up` |
+| Gazebo: `OpenGL 3.3 is not supported` / `Failed to create dummy render window` | GPU too old, or the container can't open the GPU | `gz sim --render-engine ogre …`, or `./scripts/dev.sh down && CAC_GPU=none ./scripts/dev.sh up` |
+| A Gazebo world hangs at start; log shows `fuel.gazebosim.org` | The world downloads models and the network blocks Fuel | Vendor the models into `cac_sim`; never `<include>` a Fuel URL |
 | `cannot open display` / no window appears | X11 access not allowed | Run `xhost +local:` on the host, and check `echo $DISPLAY` is set before `dev.sh up` |
 | `Permission denied` in `build/` or `install/` | Those folders were created by root (e.g. an old container) | `sudo rm -rf build install log` on the host, then rebuild |
 | `rosdep install` fails with "rosdep update" errors | rosdep cache missing | `rosdep update`, then retry |
