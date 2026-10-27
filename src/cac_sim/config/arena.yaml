@@ -79,8 +79,10 @@ randomiser:
   # Judges build the field to "require obstacle detection, mapping, and navigation planning to determine
   # a slalom route". A layout is valid only if a robot of this footprint can get from the start zone to
   # the excavation zone without touching anything.
-  # Path guarantee uses the LARGEST legal rover on purpose: the judges must leave a route for any
-  # team's robot, so real fields are never tighter than this. Do not shrink it to our rover's size.
+  # ASSUMED: judges leave a route for a typical legal rover, so the path guarantee uses the
+  # organiser schematic's rover, 1.5 x 0.75 m. (The rules let teams orient the 1.5 x 0.75 x 1 m
+  # envelope, so a rover lying flat at 1.5 x 1.0 m is also legal; set [1.5, 1.0] to test that.)
+  # Do not shrink this to our own rover's size: real fields won't be tighter for us.
   robot_footprint: [1.5, 0.75]      # stowed envelope from the rules (L x W)
   clearance: 0.10                   # extra margin on every side of the robot when checking a path exists
   min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other

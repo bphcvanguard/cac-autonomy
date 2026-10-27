@@ -1,5 +1,6 @@
 """World writer: well-formed SDF, truth fenced off, legal markers, deterministic output."""
 import filecmp
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -258,7 +259,6 @@ def test_vary_appearance_changes_only_looks(tmp_path):
     changed = {k for k in base if base[k] != on[k]}
     assert set(base) == set(on)
     # meshes, normal maps, mtl and truth are byte-identical; only the look files differ
-    assert set(base) == set(on)
     assert {'arena.sdf', 'materials/sand.png'} <= changed
     assert changed <= {'arena.sdf', 'materials/sand.png', 'materials/rock_0.png',
                        'materials/rock_1.png', 'materials/rock_2.png'}
@@ -300,3 +300,21 @@ def test_cli_vary_appearance_flag(tmp_path):
                     '--out', str(plain)], check=True, capture_output=True)
     sdfs = [(tmp_path / n / 'seed_0007' / 'arena.sdf').read_text() for n in 'vkp']
     assert len(set(sdfs)) == 3
+
+
+# Golden output without --vary-appearance. If you change the arena ON PURPOSE (geometry, layout,
+# lighting defaults), regenerate and update these hashes in the same commit, and say why.
+GOLDEN_SDF_SHA256 = {
+    ('random', '3'): '65d2085cd58212dde201bfe9854869afa4bb512db38834f0058e910543603a5b',
+    ('schematic', None): 'cb17a6e899b7efb90b3fcdce3c33734f715ba19aa64d78c00474c3f7bc8a270f',
+}
+
+
+@pytest.mark.parametrize('layout,seed', list(GOLDEN_SDF_SHA256))
+def test_default_output_matches_golden(tmp_path, layout, seed):
+    args = ['--layout', layout, '--out', str(tmp_path)] + (['--seed', seed] if seed else [])
+    subprocess.run([sys.executable, str(SCRIPT), *args], check=True, capture_output=True)
+    name = f'seed_{int(seed):04d}' if seed else layout
+    digest = hashlib.sha256((tmp_path / name / 'arena.sdf').read_bytes()).hexdigest()
+    assert digest == GOLDEN_SDF_SHA256[(layout, seed)]
+

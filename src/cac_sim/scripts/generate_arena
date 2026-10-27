@@ -24,6 +24,13 @@ def _setup_paths():
     return share if share.is_dir() else None
 
 
+def _nonneg_int(v):
+    n = int(v)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f'must be >= 0, got {n}')
+    return n
+
+
 def main(argv=None):
     share = _setup_paths()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -43,7 +50,7 @@ def main(argv=None):
     ap.add_argument('--vary-appearance', action='store_true',
                     help='seeded lighting/colour variation (appearance: in arena.yaml); '
                          'geometry and truth unchanged')
-    ap.add_argument('--appearance-seed', type=int, default=None,
+    ap.add_argument('--appearance-seed', type=_nonneg_int, default=None,
                     help='seed for the look only (implies --vary-appearance); default = the '
                          'layout seed')
     a = ap.parse_args(argv)

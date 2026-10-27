@@ -37,7 +37,10 @@ def light_tint(k):
 
 def sample(cfg, appearance_seed):
     """Return the appearance dict for one seed (pure function of cfg['appearance'] and seed)."""
-    ap = cfg['appearance']
+    ap = cfg.get('appearance')
+    if ap is None:
+        raise ValueError('--vary-appearance needs an `appearance:` section in arena.yaml '
+                         '(your --config file predates it; copy it from the packaged arena.yaml)')
     missing = [k for k in _KEYS if k not in ap]
     if missing:
         raise KeyError(f'arena.yaml appearance: is missing {missing}')

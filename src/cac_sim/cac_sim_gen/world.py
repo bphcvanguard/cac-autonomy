@@ -31,6 +31,12 @@ ROCK_VARIANTS = 3
 HALL_MARGIN = 0.3        # hall floor starts at least this far outside the inner wall faces
 HALL_EXTENT = 30.0       # how far the hall floor reaches beyond the arena
 LIGHT_HEIGHT = 4.5       # overhead lamps above the sand
+# Default lighting rig. --vary-appearance scales these, so edit them here and nowhere else.
+KEY_DIFFUSE = (0.55, 0.55, 0.52)
+KEY_DIR = appearance_mod.BASE_KEY_DIR
+LAMP_DIFFUSE = (0.42, 0.42, 0.40)
+AMBIENT = 0.42
+BACKGROUND = (0.62, 0.63, 0.64)
 # Lights and colours above are named constants here on purpose; geometry, rule limits, friction,
 # rock sink and the situational-camera sensor are in config/arena.yaml.
 
@@ -336,13 +342,13 @@ def _lights(cfg, low_gfx, app=None):
     """
     L, W = cfg['arena']['size']
     sh = 'false' if low_gfx else 'true'
-    key_diff, key_dir = '0.55 0.55 0.52 1', '-0.25 0.2 -0.95'
-    lamp_diff = '0.42 0.42 0.4 1'
+    key_diff, key_dir = _f(*KEY_DIFFUSE, 1), _f(*KEY_DIR)
+    lamp_diff = _f(*LAMP_DIFFUSE, 1)
     if app:
         k = app['light_level']
         tint = np.asarray(app['tint'])
-        key_diff = _f(*np.clip(np.array([0.55, 0.55, 0.52]) * k * tint, 0, 1.5), 1)
-        lamp_diff = _f(*np.clip(np.array([0.42, 0.42, 0.4]) * k * tint, 0, 1.5), 1)
+        key_diff = _f(*np.clip(np.array(KEY_DIFFUSE) * k * tint, 0, 1.5), 1)
+        lamp_diff = _f(*np.clip(np.array(LAMP_DIFFUSE) * k * tint, 0, 1.5), 1)
         key_dir = _f(*app['key_dir'])
     out = (f'<light type="directional" name="key"><cast_shadows>{sh}</cast_shadows>'
            f'<pose>0 0 10 0 0 0</pose><diffuse>{key_diff}</diffuse>'
@@ -359,11 +365,11 @@ def _lights(cfg, low_gfx, app=None):
 
 
 def _header(low_gfx, app=None):
-    amb, bg = '0.42 0.42 0.42 1', '0.62 0.63 0.64 1'
+    amb, bg = _f(AMBIENT, AMBIENT, AMBIENT, 1), _f(*BACKGROUND, 1)
     if app:
         t = np.asarray(app['tint'])
-        amb = _f(*np.clip(0.42 * app['ambient'] * t, 0, 1), 1)
-        bg = _f(*np.clip(np.array([0.62, 0.63, 0.64]) * app['light_level'] * t, 0, 1), 1)
+        amb = _f(*np.clip(AMBIENT * app['ambient'] * t, 0, 1), 1)
+        bg = _f(*np.clip(np.array(BACKGROUND) * app['light_level'] * t, 0, 1), 1)
     return (
         '<physics name="1ms" type="dart"><max_step_size>0.001</max_step_size>'
         '<real_time_factor>1.0</real_time_factor></physics>'
