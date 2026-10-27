@@ -12,7 +12,7 @@ from xml.sax.saxutils import escape
 import numpy as np
 import yaml
 
-from . import geometry, layout as layout_mod, markers as markers_mod
+from . import appearance as appearance_mod, geometry, layout as layout_mod, markers as markers_mod
 from .markers import (  # noqa: F401 - re-exported: part of the world API
     board_side, BOARD_TH, check_markers, marker_footprints, marker_placement, POST_R,
     wall_mounted)
@@ -83,14 +83,14 @@ def _surface(cfg, layout, x, y, seed):
     return float(np.asarray(geometry.surface_height(cfg, layout, x, y, seed)).ravel()[0])
 
 
-def _walls(cfg):
+def _walls(cfg, wall_rgb=WALL_RGB):
     L, W = cfg['arena']['size']
     t = cfg['arena']['wall']['thickness']
     h = cfg['arena']['wall']['height']
     d = cfg['arena']['sand_depth']
     H = h + d
     zc = (h - d) / 2
-    mat = _material(WALL_RGB, rough=0.85)
+    mat = _material(wall_rgb, rough=0.85)
     out = []
     # inner faces exactly at x=0, x=L, y=0, y=W; the long walls span the corners
     out.append(_box_model('wall_south', (L + 2 * t, t, H), _pose(L / 2, -t / 2, zc), mat))
@@ -328,7 +328,7 @@ def _overlay(cfg, layout):
             + vis + '</link></model>')
 
 
-def _lights(cfg, low_gfx):
+def _lights(cfg, low_gfx, app=None):
     """Indoor rig: a dim directional key plus a grid of overhead lamps (no shadows).
 
     Only the key casts shadows (one shadow pass is all a CPU laptop can afford) and --low-gfx
@@ -336,21 +336,34 @@ def _lights(cfg, low_gfx):
     """
     L, W = cfg['arena']['size']
     sh = 'false' if low_gfx else 'true'
+    key_diff, key_dir = '0.55 0.55 0.52 1', '-0.25 0.2 -0.95'
+    lamp_diff = '0.42 0.42 0.4 1'
+    if app:
+        k = app['light_level']
+        tint = np.asarray(app['tint'])
+        key_diff = _f(*np.clip(np.array([0.55, 0.55, 0.52]) * k * tint, 0, 1.5), 1)
+        lamp_diff = _f(*np.clip(np.array([0.42, 0.42, 0.4]) * k * tint, 0, 1.5), 1)
+        key_dir = _f(*app['key_dir'])
     out = (f'<light type="directional" name="key"><cast_shadows>{sh}</cast_shadows>'
-           '<pose>0 0 10 0 0 0</pose><diffuse>0.55 0.55 0.52 1</diffuse>'
+           f'<pose>0 0 10 0 0 0</pose><diffuse>{key_diff}</diffuse>'
            '<specular>0.05 0.05 0.05 1</specular>'
-           '<direction>-0.25 0.2 -0.95</direction></light>')
+           f'<direction>{key_dir}</direction></light>')
     for i, fx in enumerate((0.3, 0.7)):
         for j, fy in enumerate((0.27, 0.73)):
             out += (f'<light type="point" name="lamp_{i}{j}"><cast_shadows>false</cast_shadows>'
                     f'{_pose(fx * L, fy * W, LIGHT_HEIGHT)}'
-                    '<diffuse>0.42 0.42 0.4 1</diffuse><specular>0.02 0.02 0.02 1</specular>'
+                    f'<diffuse>{lamp_diff}</diffuse><specular>0.02 0.02 0.02 1</specular>'
                     '<attenuation><range>14</range><constant>1.0</constant><linear>0.0</linear>'
                     '<quadratic>0.004</quadratic></attenuation></light>')
     return out
 
 
-def _header(low_gfx):
+def _header(low_gfx, app=None):
+    amb, bg = '0.42 0.42 0.42 1', '0.62 0.63 0.64 1'
+    if app:
+        t = np.asarray(app['tint'])
+        amb = _f(*np.clip(0.42 * app['ambient'] * t, 0, 1), 1)
+        bg = _f(*np.clip(np.array([0.62, 0.63, 0.64]) * app['light_level'] * t, 0, 1), 1)
     return (
         '<physics name="1ms" type="dart"><max_step_size>0.001</max_step_size>'
         '<real_time_factor>1.0</real_time_factor></physics>'
@@ -362,7 +375,7 @@ def _header(low_gfx):
         '<render_engine>ogre2</render_engine></plugin>'
         '<plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>'
         '<plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>'
-        '<scene><ambient>0.42 0.42 0.42 1</ambient><background>0.62 0.63 0.64 1</background>'
+        f'<scene><ambient>{amb}</ambient><background>{bg}</background>'
         f'<shadows>{"false" if low_gfx else "true"}</shadows><grid>false</grid></scene>')
 
 
@@ -371,8 +384,14 @@ def _pretty(sdf):
     return xml.dom.minidom.parseString(sdf).toprettyxml(indent='  ')
 
 
-def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False):
-    """Write <out_dir>/<layout name>/ and return that directory (the world is its arena.sdf)."""
+def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False,
+                vary_appearance=False, appearance_seed=None):
+    """Write <out_dir>/<layout name>/ and return that directory (the world is its arena.sdf).
+
+    vary_appearance perturbs lighting and colours only (see appearance.py, `appearance:` in
+    arena.yaml); meshes and truth are byte-identical. `appearance_seed` defaults to the
+    layout seed.
+    """
     name = layout.get('name') or 'arena'
     root = Path(out_dir) / name
     (root / 'meshes').mkdir(parents=True, exist_ok=True)
@@ -381,19 +400,33 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     seed = 0 if seed is None else int(seed)
     if markers:
         check_marker_support(cfg)
+    app = None
+    if vary_appearance:
+        app = appearance_mod.sample(cfg, seed if appearance_seed is None else appearance_seed)
 
     terrain = geometry.build_terrain(cfg, layout, seed, VISUAL_RES, FINE_RES)
     geometry.write_obj(root / 'meshes' / 'terrain.obj', terrain, mtl_name='sand')
     coarse = geometry.build_terrain(cfg, layout, seed, COLLISION_RES, COLLISION_RES)
     geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse, mtl_name='sand')
-    geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
-                          albedo=tuple(cfg['sand']['albedo']))
+    if app:
+        geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
+                              albedo=app['sand_albedo'], contrast=app['sand_contrast'])
+    else:
+        geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
+                              albedo=tuple(cfg['sand']['albedo']))
     geometry.sand_normal_map(root / 'materials' / 'sand_normal.png', seed, 1024)
-    geometry.rock_texture_variants(root / 'materials', seed, ROCK_VARIANTS)
+    if app:
+        geometry.rock_texture_variants(root / 'materials', seed, ROCK_VARIANTS,
+                                       palette_offset=app['rock_palette_offset'],
+                                       brightness=app['rock_brightness'])
+    else:
+        geometry.rock_texture_variants(root / 'materials', seed, ROCK_VARIANTS)
     geometry.rock_normal_map(root / 'materials' / 'rock_normal.png', seed, 512)
 
     yaw_rng = np.random.default_rng([seed, 7])    # own stream: boulder yaw
-    models = [_terrain(cfg), _floor(cfg), *_hall_floor(cfg), *_walls(cfg), *_pipes(cfg),
+    models = [_terrain(cfg), _floor(cfg), *_hall_floor(cfg),
+              *_walls(cfg, appearance_mod.wall_rgb(WALL_RGB, app) if app else WALL_RGB),
+              *_pipes(cfg),
               _column(cfg)]
     for i, b in enumerate(layout['boulders']):
         geometry.write_obj(root / 'meshes' / f'rock_{i}.obj',
@@ -407,8 +440,9 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     if overlay:
         models.append(_overlay(cfg, layout))
 
-    sdf = (f'<?xml version="1.0"?><sdf version="1.9"><world name="cac_arena">{_header(low_gfx)}'
-           f'{_lights(cfg, low_gfx)}{"".join(models)}</world></sdf>')
+    sdf = (f'<?xml version="1.0"?><sdf version="1.9"><world name="cac_arena">'
+           f'{_header(low_gfx, app)}'
+           f'{_lights(cfg, low_gfx, app)}{"".join(models)}</world></sdf>')
     (root / 'arena.sdf').write_text(_pretty(sdf))
 
     # Ground truth lives in its own sub-directory so it is never installed with the world.

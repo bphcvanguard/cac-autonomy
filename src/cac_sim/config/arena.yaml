@@ -79,7 +79,9 @@ randomiser:
   # Judges build the field to "require obstacle detection, mapping, and navigation planning to determine
   # a slalom route". A layout is valid only if a robot of this footprint can get from the start zone to
   # the excavation zone without touching anything.
-  robot_footprint: [1.5, 0.75]      # stowed envelope from the rules (L x W); the old rover is smaller
+  # Path guarantee uses the LARGEST legal rover on purpose: the judges must leave a route for any
+  # team's robot, so real fields are never tighter than this. Do not shrink it to our rover's size.
+  robot_footprint: [1.5, 0.75]      # stowed envelope from the rules (L x W)
   clearance: 0.10                   # extra margin on every side of the robot when checking a path exists
   min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other
   keep_off_walls: 0.25              # obstacles at least this far from any wall
@@ -130,3 +132,29 @@ situational_camera_sensor:
   resolution: [1280, 720]           # px
   rate_hz: 5
   clip: [0.1, 40.0]                 # near, far, m
+
+appearance:
+  # Used only with --vary-appearance (generate_arena) / write_world(vary_appearance=True). Each entry
+  # is a [min, max] range drawn uniformly per appearance seed; nothing here changes geometry,
+  # collision, layout or truth. Every range is ASSUMED: the real venue's lighting and paint are
+  # unknown, so the ranges only bracket "plausible indoor hall" for perception-robustness tests.
+  light_level: [0.6, 1.2]           # ASSUMED: x on all lamps/key/ambient; dim hall .. bright hall (above ~1.2 the sand clips white)
+  ambient_factor: [0.8, 1.2]        # ASSUMED: extra x on ambient (bounce light from walls/floor)
+  color_temp_k: [3500, 6000]        # ASSUMED: warm tungsten/halogen .. cool white LED/daylight mix
+  key_elevation_deg: [55, 80]       # ASSUMED: key light height; default rig is ~71 deg
+  key_azimuth_jitter_deg: [-40, 40] # ASSUMED: swing of the key around the default heading
+  sand_brightness: [0.82, 1.05]     # ASSUMED: x on albedo; dry light tan .. slightly damp/darker
+  sand_grey_mix: [0.0, 0.35]        # ASSUMED: share blended toward grey (dusty/greyer sand)
+  sand_tint_jitter: [0.0, 0.04]     # ASSUMED: max per-channel tint scatter of the sand colour
+  sand_contrast: [0.7, 1.4]         # ASSUMED: x on grain/clump contrast (fine .. coarser sand)
+  rock_brightness: [0.8, 1.1]       # ASSUMED: x on rock texture colour
+  wall_greyness: [0.0, 1.0]         # ASSUMED: 0 = beige paint, 1 = light grey
+  wall_lightness: [0.92, 1.08]      # ASSUMED: x on wall colour; beige .. off-white .. light grey
+
+our_rover:
+  # Our rover, for the test harness (spawn size, clearance and contact checks). NOT used by the
+  # randomiser (see randomiser.robot_footprint). APPROXIMATE: ~0.6 x 0.3 m. Update with the measured
+  # stowed L x W x H and mass before relying on it.
+  footprint: [0.60, 0.30]           # L x W, metres, TO BE MEASURED
+  height: null                      # metres, TO BE MEASURED
+  mass_kg: null                     # TO BE MEASURED (BCP-mass divides by it)

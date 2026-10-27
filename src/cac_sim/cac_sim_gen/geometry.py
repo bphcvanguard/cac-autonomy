@@ -621,7 +621,7 @@ def _normalise_mean(img, albedo):
     return img
 
 
-def sand_texture(path, seed, size=1024, albedo=(0.75, 0.68, 0.55)):
+def sand_texture(path, seed, size=1024, albedo=(0.75, 0.68, 0.55), contrast=1.0):
     """Seamless dry fine-sand albedo (1 tile = UV_TILE metres), channel means == `albedo`.
 
     Fine grain (1-3 mm) with per-grain colour scatter, sparse coarse grains, 2-5 cm clumping and
@@ -642,6 +642,8 @@ def sand_texture(path, seed, size=1024, albedo=(0.75, 0.68, 0.55)):
     lum = lum - 0.10 * ((blob > 2.3) & (sel < 0.5)) + 0.08 * ((blob > 2.3) & (sel >= 0.5))
     speck = rng.random((size, size))
     lum = lum - 0.22 * (speck > 0.997) + 0.12 * (speck < 0.003)
+    if contrast != 1.0:          # appearance variation only; 1.0 keeps the bytes unchanged
+        lum = 1.0 + contrast * (lum - 1.0)
     img = base[None, None, :] * lum[:, :, None]
     # Per-grain mineral colour scatter (quartz/feldspar/dark grains) + a faint warm/cool drift.
     tint = 0.025 * _tile_noise(rng, size, 1.8) + 0.008 * _tile_noise(rng, size, size / 4.0)
@@ -711,17 +713,22 @@ def _rock_albedo(rng, size, palette):
     return np.clip(img * lum[:, :, None], 0.0, 1.0)
 
 
-def rock_texture_variants(out_dir, seed, n=3, size=512):
+def rock_texture_variants(out_dir, seed, n=3, size=512, palette_offset=0, brightness=1.0):
     """Write rock_0.png .. rock_{n-1}.png (different stone palettes and grain) into out_dir.
 
     Returns the file names (not paths), e.g. ['rock_0.png', 'rock_1.png', 'rock_2.png'].
+    `palette_offset` rotates which stone palette each variant uses and `brightness` scales the
+    colour (appearance variation only; the defaults leave the output unchanged).
     """
     out_dir = Path(out_dir)
     names = []
     for k in range(int(n)):
         rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX + k])
         name = 'rock_%d.png' % k
-        write_png(out_dir / name, _rock_albedo(rng, size, ROCK_PALETTES[k % len(ROCK_PALETTES)]))
+        img = _rock_albedo(rng, size, ROCK_PALETTES[(k + palette_offset) % len(ROCK_PALETTES)])
+        if brightness != 1.0:
+            img = np.clip(img * brightness, 0.0, 1.0)
+        write_png(out_dir / name, img)
         names.append(name)
     return names
 

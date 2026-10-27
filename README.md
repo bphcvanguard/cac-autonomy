@@ -169,6 +169,19 @@ The `robot` stage is the base layer only (no GUI, no Gazebo), for the rover's on
 
 ---
 
+## The arena in simulation
+
+`cac_sim` builds the competition arena as a Gazebo world: 9 × 5 m of tilled sand, with boulders, craters, the central column and walls, plus a randomiser that makes new obstacle fields the way the judges would. After `colcon build`:
+
+```bash
+source install/setup.bash
+export GZ_PARTITION=$USER-$(hostname)    # your own Gazebo "channel"; see src/cac_sim/README.md
+gz sim -r $(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/schematic/arena.sdf
+ros2 run cac_sim generate_arena --layout random --seed 42 --count 10 --out ~/arenas
+```
+
+All geometry, and every assumption the rulebook leaves open, lives in `src/cac_sim/config/arena.yaml`. Details, flags, what the sensors can see, and the ground-truth rule are in [`src/cac_sim/README.md`](src/cac_sim/README.md).
+
 ## Verify your setup
 
 Post a screenshot of these on your onboarding issue:
@@ -213,6 +226,7 @@ Useful commands: `git status` · `git diff` · `git add -p` · `git fetch && git
 | `dev.sh up` fails: `error gathering device information … /dev/dri` | You forced `CAC_GPU=dri` on a machine without a GPU device | `CAC_GPU=none ./scripts/dev.sh up` |
 | Gazebo: `OpenGL 3.3 is not supported` / `Failed to create dummy render window` | GPU too old, or the container can't open the GPU | `gz sim --render-engine ogre …`, or `./scripts/dev.sh down && CAC_GPU=none ./scripts/dev.sh up` |
 | A Gazebo world hangs at start; log shows `fuel.gazebosim.org` | The world downloads models and the network blocks Fuel | Vendor the models into `cac_sim`; never `<include>` a Fuel URL |
+| Gazebo shows someone else's world, or your robot moves on its own | Two Gazebo instances on the same network found each other | Give each one its own channel: `export GZ_PARTITION=$USER-$(hostname)` (add it to `~/.bashrc`) |
 | `cannot open display` / no window appears | X11 access not allowed | Run `xhost +local:` on the host, and check `echo $DISPLAY` is set before `dev.sh up` |
 | `Permission denied` in `build/` or `install/` | Those folders were created by root (e.g. an old container) | `sudo rm -rf build install log` on the host, then rebuild |
 | `rosdep install` fails with "rosdep update" errors | rosdep cache missing | `rosdep update`, then retry |

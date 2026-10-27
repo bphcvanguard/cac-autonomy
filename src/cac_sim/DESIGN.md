@@ -44,6 +44,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 | `geometry.py` | geometry | `surface_height(cfg, layout, x, y, seed) -> ndarray` (vectorised) · `build_terrain(cfg, layout, seed, res, fine_res) -> Mesh` · `rock_mesh(diameter, height, seed, sink=0.04, index=0) -> Mesh` · `crater_params(cfg, layout, i, seed) -> dict` (depth, rim, outer_radius, effective depth after the slope cap) · `write_obj(path, mesh, mtl_name=None)` (with `mtl_name` also writes the sibling `.mtl`) · `write_png(path, img)` · `sand_texture(path, seed, size, albedo)` · `sand_normal_map(...)` · `rock_texture_variants(out_dir, seed, n)` · `rock_normal_map(...)` |
 | `layout.py` | randomiser | `random_layout(cfg, seed) -> layout` · `check_layout(cfg, layout, strict=True) -> list[str]` (empty = valid) · `path_exists(cfg, layout) -> (bool, list[(x, y)])` (disc) · `se2_path_exists(cfg, layout) -> (bool, list[(x, y, yaw_deg)])` (real footprint, must turn) · `random_start_pose(cfg, rng) -> dict` · `truth(cfg, layout, markers=False) -> dict` · `render_map(cfg, layout, png_path, path=None, markers=False)` |
 | `world.py` | world | `write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False) -> Path` · `check_marker_support(cfg)` (raises `MarkerError`) · `check_markers(cfg)` (rule check) |
+| `appearance.py` | world | `sample(cfg, appearance_seed) -> dict` · `wall_rgb(base, app)` · `light_tint(kelvin)`; opt-in via `write_world(..., vary_appearance=False, appearance_seed=None)`. Changes lights, scene ambient/background, wall colour, `sand.png`, `rock_<k>.png` ONLY; never meshes, collision, layout or truth. Ranges: `appearance:` in `arena.yaml` |
 | `scripts/generate_arena` | world | CLI (below) |
 
 `Mesh` is a small dataclass: `vertices (N,3) float`, `faces (M,3) int`, optional `uvs (N,2)`, `normals (N,3)`.
@@ -53,7 +54,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
                [--config arena.yaml] [--markers] [--marker-preset frame_inner|perimeter_walls]
-               [--sitcams] [--overlay] [--low-gfx]
+               [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
 Output on stderr: `warning [name]:` = hard problem (overlap, outside the arena, no path);
@@ -78,7 +79,7 @@ exit code 2; no world is written. Truth is generated only with `--out`: it is no
 - Everything is deterministic for a given seed. Each subsystem uses its own RNG stream
   (`numpy.random.default_rng([seed, STREAM_ID, ...])`) so adding a feature never reshuffles existing layouts.
   Stream ids (all distinct; `test_rng_streams_distinct` checks seeds 0..20): layout obstacles `[s, 2]`,
-  start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`; geometry: textures 20-26 (sand etc.), crater
+  start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`, appearance variation `[appearance_seed, 70]` (`appearance.py`); geometry: textures 20-26 (sand etc.), crater
   rim `[s, 21, i]`, crater depth `[s, 22, i]`, rock shape `[s, 30, i]`, rock texture variants `[s, 50+k]`.
 - Budgets so CPU-only laptops stay real-time: terrain visual <= 80k triangles, collision <= 20k,
   each rock <= 400 triangles (measured max ~216).

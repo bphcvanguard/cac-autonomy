@@ -40,12 +40,19 @@ def main(argv=None):
     ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
     ap.add_argument('--overlay', action='store_true', help='draw zones and target (visual only)')
     ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
+    ap.add_argument('--vary-appearance', action='store_true',
+                    help='seeded lighting/colour variation (appearance: in arena.yaml); '
+                         'geometry and truth unchanged')
+    ap.add_argument('--appearance-seed', type=int, default=None,
+                    help='seed for the look only (implies --vary-appearance); default = the '
+                         'layout seed')
     a = ap.parse_args(argv)
 
     from cac_sim_gen import config, layout as layout_mod, world
     cfg_path = a.config or (share / 'config' / 'arena.yaml' if share else None)
     cfg = config.resolve(config.load_config(cfg_path), a.marker_preset)
 
+    vary = a.vary_appearance or a.appearance_seed is not None
     layouts = []
     if a.layout == 'random':
         for s in range(a.seed, a.seed + max(a.count, 1)):
@@ -77,7 +84,8 @@ def main(argv=None):
                 print(f'info [{lay["name"]}]: {p}', file=sys.stderr)
         try:
             root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
-                                     overlay=a.overlay, low_gfx=a.low_gfx)
+                                     overlay=a.overlay, low_gfx=a.low_gfx,
+                                     vary_appearance=vary, appearance_seed=a.appearance_seed)
         except world.MarkerError as e:
             print(f'error: --markers: {e}', file=sys.stderr)
             return 2

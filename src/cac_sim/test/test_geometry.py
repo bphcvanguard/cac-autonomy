@@ -459,6 +459,7 @@ def test_rng_streams_distinct():
     seen = {}
     for s in range(21):
         ids = [('layout_obs', [s, 2]), ('layout_start', [s, 3]), ('world_yaw', [s, 7]),
+               ('appearance', [s, 70]),
                ('till', [s, g.STREAM_TILL]), ('uv', [s, g.STREAM_UV]),
                ('sand_tex', [s, g.STREAM_SAND_TEX]), ('sand_nrm', [s, g.STREAM_SAND_NRM]),
                ('rock_nrm', [s, g.STREAM_ROCK_NRM])]

@@ -238,3 +238,65 @@ def test_posts_reserved_without_markers_flag(tmp_path):
     t = yaml.safe_load((d / 'truth' / 'truth.yaml').read_text())
     assert t['paths_include_marker_posts'] and t['marker_posts'] == []
     assert t['se2_path_exists']
+
+
+def _files(root):
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob('*'))
+            if p.is_file()}
+
+
+def test_vary_appearance_changes_only_looks(tmp_path):
+    cfg = config.load_config()
+    lay = layout_mod.random_layout(cfg, 7)
+    lay['name'] = 'a'
+    base = _files(world.write_world(cfg, lay, tmp_path / 'off', markers=False))
+    off2 = _files(world.write_world(cfg, lay, tmp_path / 'off2'))
+    assert base == off2                                   # flag off: deterministic
+    on = _files(world.write_world(cfg, lay, tmp_path / 'on', vary_appearance=True))
+    same_seed = _files(world.write_world(cfg, lay, tmp_path / 'on2', vary_appearance=True))
+    assert on == same_seed                                # same seed: identical look
+    changed = {k for k in base if base[k] != on[k]}
+    assert set(base) == set(on)
+    # meshes, normal maps, mtl and truth are byte-identical; only the look files differ
+    assert set(base) == set(on)
+    assert {'arena.sdf', 'materials/sand.png'} <= changed
+    assert changed <= {'arena.sdf', 'materials/sand.png', 'materials/rock_0.png',
+                       'materials/rock_1.png', 'materials/rock_2.png'}
+    other = _files(world.write_world(cfg, {**lay, 'seed': 8}, tmp_path / 'o8',
+                                     vary_appearance=True))
+    assert other['arena.sdf'] != on['arena.sdf']
+    assert other['materials/sand.png'] != on['materials/sand.png']
+    # independent look seed: same layout and geometry, different appearance
+    k1 = _files(world.write_world(cfg, lay, tmp_path / 'k1', vary_appearance=True,
+                                  appearance_seed=1))
+    assert k1['arena.sdf'] != on['arena.sdf']
+    assert {k: v for k, v in k1.items() if k.startswith(('meshes/', 'truth/'))} == {
+        k: v for k, v in base.items() if k.startswith(('meshes/', 'truth/'))}
+
+
+def test_appearance_within_bounds():
+    from cac_sim_gen import appearance
+    cfg = config.load_config()
+    ap = cfg['appearance']
+    for s in range(60):
+        a = appearance.sample(cfg, s)
+        assert ap['light_level'][0] <= a['light_level'] <= ap['light_level'][1]
+        assert ap['color_temp_k'][0] <= a['color_temp_k'] <= ap['color_temp_k'][1]
+        assert abs(a['key_dir'][0] ** 2 + a['key_dir'][1] ** 2 + a['key_dir'][2] ** 2 - 1) < 1e-9
+        assert a['key_dir'][2] < -0.8
+        assert all(0.05 <= c <= 0.95 for c in a['sand_albedo'])
+        assert all(0.4 < t < 1.7 for t in a['tint'])      # tinted, never neon
+        w = appearance.wall_rgb(world.WALL_RGB, a)
+        assert all(0.55 <= c <= 0.97 for c in w)
+
+
+def test_cli_vary_appearance_flag(tmp_path):
+    for flags, name in ((['--vary-appearance'], 'v'), (['--appearance-seed', '3'], 'k')):
+        subprocess.run([sys.executable, str(SCRIPT), '--layout', 'random', '--seed', '7',
+                        '--out', str(tmp_path / name), *flags],
+                       check=True, capture_output=True)
+    plain = tmp_path / 'p'
+    subprocess.run([sys.executable, str(SCRIPT), '--layout', 'random', '--seed', '7',
+                    '--out', str(plain)], check=True, capture_output=True)
+    sdfs = [(tmp_path / n / 'seed_0007' / 'arena.sdf').read_text() for n in 'vkp']
+    assert len(set(sdfs)) == 3
