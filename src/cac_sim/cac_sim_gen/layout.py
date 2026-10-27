@@ -1021,6 +1021,11 @@ def _heading_words(yaw_deg):
     return _COMPASS[int(((yaw_deg % 360.0) + 22.5) // 45) % 8]
 
 
+def _zone(cfg, x):
+    """'excavation' if x is in the digging half (x >= excavation start), else 'obstacle'."""
+    return 'excavation' if x >= cfg['zones']['excavation'][0] else 'obstacle'
+
+
 def setup_sheet(cfg, layout, out_dir, markers=False):
     """Write the human set-up sheet for building this layout on a real mock arena.
 
@@ -1032,14 +1037,17 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
     root = Path(out_dir) / layout['name'] / 'truth'
     root.mkdir(parents=True, exist_ok=True)
     w, h = cfg['arena']['size']
-    rows = []                                   # (x, id, line parts)
+    rows = []                                   # (x, y, kind order, i, id, kind, cells, zone)
     for i, b in enumerate(layout.get('boulders', [])):
         rows.append((b['position'][0], b['position'][1], 0, i, f'B{i + 1}', 'boulder',
-                     [str(_cm(b['diameter'])), str(_cm(b['height'])), '-', '-']))
+                     [str(_cm(b['diameter'])), str(_cm(b['height'])), '-', '-', '-'],
+                     _zone(cfg, b['position'][0])))
     for i, c in enumerate(layout.get('craters', [])):
         cp = crater_params(cfg, layout, i, layout.get('seed'))
         rows.append((c['position'][0], c['position'][1], 1, i, f'C{i + 1}', 'crater',
-                     [str(_cm(c['diameter'])), '-', _cm1(cp['depth_eff']), _cm1(cp['rim'])]))
+                     [str(_cm(c['diameter'])), '-', _cm1(cp['depth_eff']), _cm1(cp['rim']),
+                      str(_cm(cp['outer_radius'] - c['diameter'] / 2))],
+                     _zone(cfg, c['position'][0])))
     rows.sort(key=lambda r: (_cm(r[0]), _cm(r[1]), r[2], r[3]))
     sp = layout['start_pose']
     yaw = sp['yaw_deg'] % 360.0
@@ -1048,6 +1056,7 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
     cx, cy = col['centre']
     diag = math.hypot(w, h)
     n_b, n_c = len(layout.get('boulders', [])), len(layout.get('craters', []))
+    corners = [f'{_cm(px)}, {_cm(py)}' for px, py in _footprint_corners(cfg, sp)]
     seed = layout.get('seed')
 
     L_ = [f'# Mock arena set-up sheet: {layout["name"]}', '',
@@ -1056,6 +1065,8 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
           '**Keep this sheet away from the robot software and its developers during tests: '
           'it lists where every obstacle is.**', '',
           '## 1. Origin and directions', '',
+          f'- Wall height: {_cm(cfg["arena"]["wall"]["height"])} cm (ASSUMED, not in the '
+          'rulebook; our best guess).',
           '- **Origin = the inner corner where the west and south walls meet, the start-zone '
           'corner.** Measure from the inside faces of the walls, never from the outside.',
           f'- **x** runs along the long {w:g} m wall (west wall corner towards the far end). '
@@ -1067,24 +1078,39 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
           'the 3-4-5 trick), not diagonally.', '',
           '## 2. Obstacles (lay them out in this order, walking along the long wall)', '',
           '| Done | Id | Type | x (cm) | y (cm) | Diameter (cm) | Rock height (cm) '
-          '| Crater depth (cm) | Rim height (cm) |',
-          '|---|---|---|---:|---:|---:|---:|---:|---:|']
-    for x, y, _k, _i, oid, kind, rest in rows:
-        L_.append(f'| [ ] | {oid} | {kind} | {_cm(x)} | {_cm(y)} | ' + ' | '.join(rest) + ' |')
+          '| Crater depth (cm) | Rim height (cm) | Rim out to (cm from edge) | Zone |',
+          '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|']
+    for x, y, _k, _i, oid, kind, rest, zone in rows:
+        L_.append(f'| [ ] | {oid} | {kind} | {_cm(x)} | {_cm(y)} | ' + ' | '.join(rest)
+                  + f' | {zone} |')
     L_ += ['',
            '- **Boulder (B):** pick a rock about this diameter and height; centre its footprint '
            'on the mark and sit it on the sand (it may sink 1-2 cm).',
-           '- **Crater (C):** dig a bowl of this diameter, pile the dug sand round the edge as a '
-           'low rim, then check the depth at the centre with a ruler laid across the rim '
-           '(measure from the ruler down to the bowl floor, and subtract the rim height). '
-           'Diameter is across the bowl; the rim sits just outside it.',
+           '- **Crater (C):** dig a bowl of this diameter and pile the dug sand round the edge as '
+           'a low rim. Diameter is across the bowl, edge to edge.',
+           '- **Crater depth** is measured from the flat, undisturbed sand level, not from the '
+           'rim top. To measure: lay a straight ruler or batten across the crater, resting on '
+           'the flat sand OUTSIDE the rim (or on two equal blocks). Measure from the batten '
+           'down to the deepest point of the bowl. That number is the depth. If you rest on '
+           'blocks, subtract the block height.',
+           '- **Rim height** is the height of the rim top above the flat sand. **Rim out to** is '
+           'roughly how far the raised sand reaches beyond the crater edge; blend it into the '
+           'flat sand there.',
            '- Each Id (B1, C2, ...) is printed on `setup_plan.png` at the obstacle centre (+). '
            'On the plan: blue square = the 2 x 2 m start zone with the robot outline and arrow; '
            'green and red boxes = construction zone and target box (reference only, nothing '
-           'to build); purple dots = marker posts.', '',
+           'to build)' + ('; purple dots = marker posts.'
+                          if markers and marker_list(cfg) else '.'),
+           '- Zone: `obstacle` = x under 500 cm; `excavation` = x from 500 cm (the digging '
+           'half). Your own tolerances, not rules: positions +/-2 cm, rock size +/-3 cm, '
+           'crater diameter +/-3 cm, depth +/-1 cm.', '',
            '## 3. Start pose (robot)', '',
            f'- Centre of the robot base: **x = {_cm(sp["x"])} cm, y = {_cm(sp["y"])} cm** '
            f'(robot footprint {fl * 100:.0f} x {fw * 100:.0f} cm).',
+           f"- The robot's front points along the heading; its {fl * 100:.0f} cm side lies "
+           f'along the heading. Footprint corners in cm, for outlining with tape: '
+           f'front-left ({corners[0]}), front-right ({corners[1]}), '
+           f'rear-right ({corners[2]}), rear-left ({corners[3]}).',
            f'- Heading: **{yaw:.0f} degrees counter-clockwise from the +x direction** (the long '
            f'wall, pointing away from the origin), seen from above. In words: facing roughly '
            f'**{_heading_words(yaw)}**.',
@@ -1116,6 +1142,9 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
                       f'{"on the wall" if wall_mounted(cfg, m) else "on a thin post"} |')
         L_.append('')
         nxt += 1
+    if not (markers and marker_list(cfg)):
+        L_ += ['Markers: not included in this sheet (generate with --markers to get the '
+               'marker table).', '']
     L_ += [f'## {nxt}. Check before running', '',
            f'- [ ] Walls form a clean {w:g} x {h:g} m rectangle: both diagonals measure '
            f'{_cm(diag)} cm.',
@@ -1123,9 +1152,11 @@ def setup_sheet(cfg, layout, out_dir, markers=False):
            f'- [ ] Every one of the {n_b + n_c} obstacles in the table is placed and ticked; '
            'no extra rocks or objects.',
            '- [ ] Re-measure 3 obstacles from the origin with the tape; each within 2 cm.',
-           '- [ ] Crater depths checked at the centre with a ruler.',
+           '- [ ] Crater depths checked with the batten method above (from the flat sand level).',
            '- [ ] Robot placed at the start pose above (centre, heading); motors '
            'stay disabled until everyone is clear.',
+           '- [ ] Remove all pegs and tape marks before the robot runs (they are not in the '
+           'real arena and the robot could see them).',
            '- [ ] Photograph the finished field from above/one corner and file it with '
            f'`{layout["name"]}`.', '',
            '![plan](setup_plan.png)', '']

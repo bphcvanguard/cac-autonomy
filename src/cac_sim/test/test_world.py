@@ -349,7 +349,7 @@ def test_setup_sheet_matches_truth(tmp_path):
     rows = {}
     for line in text.splitlines():
         cells = [c.strip() for c in line.strip('|').split('|')]
-        if len(cells) == 9 and cells[1][:1] in 'BC' and cells[1][1:].isdigit():
+        if len(cells) == 11 and cells[1][:1] in 'BC' and cells[1][1:].isdigit():
             rows[cells[1]] = cells
     assert len(rows) == len(t['obstacles'])
     xs = [int(r[3]) for r in rows.values()]

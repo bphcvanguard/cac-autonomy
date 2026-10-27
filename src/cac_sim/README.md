@@ -3,6 +3,16 @@
 
 Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders, craters, central column, walls) and a seeded randomiser for obstacles and the start pose. Design contract: `DESIGN.md`.
 
+## Words used here
+
+- **Arena frame / origin:** the coordinate system of the arena. Origin (0, 0) is the inner corner where the west and south walls meet, at the start-zone corner. x runs along the 9 m side, y along the 5 m side.
+- **Zones:** `start` (2 x 2 m, no obstacles), `obstacle` (the first 5 m), `excavation` (the last 4 m, where sand may be dug), `construction` (where the berm is built).
+- **Truth:** the file (`truth/truth.yaml`) with the true obstacle positions. For scoring and setup only. The robot never reads it.
+- **ASSUMED:** a value the rulebook does not give. Our best guess; change it in `config/arena.yaml`.
+- **Slalom:** the judges must force a route that weaves between obstacles.
+- **SE(2) path check:** a check that a 1.5 x 0.75 m rover can actually drive AND turn through the field.
+- **Seed:** a number that fixes the random layout. Same seed, same arena.
+
 | Robot view from the start zone | Overview | Layout (`truth/map.png`) |
 |---|---|---|
 | ![robot view](docs/arena_robot_view.png) | ![overview](docs/arena_overview.png) | ![map](docs/arena_map.png) |
@@ -10,6 +20,8 @@ Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders,
 ## Run a world
 
 `colcon build` generates and installs these worlds: `schematic` (organiser's example layout), `empty`, `seed_0001` to `seed_0005`.
+
+Installed worlds live at `$(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/<name>/arena.sdf`. `seed_0001` to `seed_0005` have the same `arena.sdf` as `generate_arena --layout random --seed 1..5` output (checked for seed 1; the installed copy has no `truth/`).
 
 ```bash
 source install/setup.bash
@@ -47,14 +59,20 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`; without it, or with a wrong dictionary name, the CLI prints an error to stderr and exits non-zero) |
 | `--config FILE` | `arena.yaml` override (default: the packaged one) |
 | `--marker-preset NAME` | `frame_inner` (start zone's inner edges, default) or `perimeter_walls` (the west and south walls). The rule text allows both readings; see `arena.yaml` |
-| `--setup-sheet` | also writes `truth/setup_sheet.md` (tape-measure checklist: every obstacle sorted by x, in cm from the west-south inner corner; start pose, column, markers, pre-run checks) and `truth/setup_plan.png` (labelled plan, 50 cm grid) so a physical mock arena can copy the same layout. Nothing else changes. Reveals obstacle positions, so it stays with the truth |
+| `--setup-sheet` | also writes `truth/setup_sheet.md` and `truth/setup_plan.png`, so a physical mock arena can copy the layout (see below). Nothing else changes. Reveals obstacle positions, so it stays with the truth |
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
 | `--vary-appearance` | off by default. Seeded change of the look only: light level, key direction, ambient, colour temperature, sand tint/brightness/contrast, rock palette, wall colour. Geometry, collision, layout and truth stay byte-identical. Ranges (all ASSUMED) in `arena.yaml` `appearance:` |
 | `--appearance-seed K` | seed for the look only (implies `--vary-appearance`); default is the layout seed, so "seed 7" stays one fixed scene |
 
-Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). A smaller mock arena should use a custom `--config` (rocks and craters do not scale down).
+Output folders are named `seed_0007` (seed 7, four digits) or `schematic` / `empty` / the layout file's name. Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). A smaller mock arena should use a custom `--config` (rocks and craters do not scale down).
+
+### Building a field in the mock arena
+
+`setup_sheet.md` is a tape-measure checklist: every obstacle sorted by x, in cm from the west-south inner corner, plus the start pose, column, markers (with `--markers`) and pre-run checks.
+`setup_plan.png` is the labelled plan (50 cm grid, each obstacle marked with its id).
+Peg each centre, place the obstacle, tick the row, then remove the pegs before the robot runs.
 
 Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m). The posts are real obstacles: the randomiser and all path checks (and the truth paths) always keep room for the configured preset's posts, with or without `--markers`.
 

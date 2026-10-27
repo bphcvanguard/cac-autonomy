@@ -175,10 +175,17 @@ The `robot` stage is the base layer only (no GUI, no Gazebo), for the rover's on
 
 ```bash
 source install/setup.bash
-export GZ_PARTITION=$USER-$(hostname)    # your own Gazebo "channel"; see src/cac_sim/README.md
+export GZ_PARTITION=$USER-$(hostname)    # set this BEFORE starting gz (see below)
 gz sim -r $(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/schematic/arena.sdf
-ros2 run cac_sim generate_arena --layout random --seed 42 --count 10 --out ~/arenas
+ros2 run cac_sim generate_arena --layout random --seed 42 --count 10 --out /workspace/arenas
+ros2 run cac_sim generate_arena --layout random --seed 7 --setup-sheet --out /workspace/arenas
 ```
+
+- **The window needs a desktop display.** Docker users: run `gz sim -r ...` from `./scripts/dev.sh sh`, which forwards the display. Without a display, run headless instead: `gz sim -s -r -v 3 <world>`. The `-v 3` prints progress so you can see it is running. Press Ctrl-C to stop.
+- **Use `--out /workspace/arenas` in Docker.** `~/arenas` would land in the container's home. `/workspace/arenas` is `arenas/` in your clone on the laptop (it is gitignored).
+- **The setup sheet** (for building the layout on a real mock arena) lands in `arenas/seed_0007/truth/setup_sheet.md` and `arenas/seed_0007/truth/setup_plan.png`.
+- **`GZ_PARTITION`:** Gazebo finds every other Gazebo on the same network. This name keeps yours private. Set it before starting `gz`, and put it in `~/.bashrc` inside the container.
+- **`info [schematic] ...` or `info [empty] ...` lines during `colcon build` are normal.** They are rulebook deviations of the fixed example layouts, not errors.
 
 All geometry, and every assumption the rulebook leaves open, lives in `src/cac_sim/config/arena.yaml`. Details, flags, what the sensors can see, and the ground-truth rule are in [`src/cac_sim/README.md`](src/cac_sim/README.md).
 
