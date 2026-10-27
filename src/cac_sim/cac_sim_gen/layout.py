@@ -175,9 +175,14 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, fixed):
         else:
             ext = r + 0.002
         ylo, yhi = off + r, h - off - r
+        # Always draw the same numbers in the same order (one stream): which branch is used must
+        # not change how many draws follow.
+        u_route, u_slalom = float(rng.random()), float(rng.random())
+        t_route, n_route = float(rng.random()), float(rng.uniform(-1, 1))
+        u_seg = float(rng.random())
         if zone == 'obstacle':
             xlo, xhi = off + r, z['excavation'][0] - ext
-            if rng.random() < SLALOM_BIAS:
+            if u_slalom < SLALOM_BIAS:
                 band = rc.get('slalom_band', [2.0, 5.0])
                 xlo, xhi = max(xlo, band[0] + ext), min(xhi, band[1] - ext)
         elif zone == 'excavation':
@@ -189,6 +194,15 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, fixed):
         if xhi <= xlo or yhi <= ylo:
             continue
         x, y = float(rng.uniform(xlo, xhi)), float(rng.uniform(ylo, yhi))
+        segs = _route_segments(cfg, zone)
+        if segs and u_route < rc.get('route_bias', 0.0):
+            (ax, ay), (bx, by) = segs[min(int(u_seg * len(segs)), len(segs) - 1)]
+            ln = math.hypot(bx - ax, by - ay)
+            off_n = n_route * rc.get('route_band', 0.5)
+            x = ax + t_route * (bx - ax) - off_n * (by - ay) / ln
+            y = ay + t_route * (by - ay) + off_n * (bx - ax) / ln
+            if not (xlo <= x <= xhi and ylo <= y <= yhi):
+                continue
         if _circle_rect_dist(x, y, z['start']) < ext + rc['start_zone_margin']:
             continue
         cm = rc['construction_zone_margin']
@@ -204,6 +218,16 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, fixed):
         item['position'] = [round(x, 3), round(y, 3)]
         return item
     return None
+
+
+def _route_segments(cfg, zone):
+    """Route segments (from randomiser.routes) whose midpoint lies in `zone`."""
+    out = []
+    for pts in cfg['randomiser'].get('routes', {}).values():
+        for a, b in zip(pts[:-1], pts[1:]):
+            if _zone_of(cfg, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2) == zone:
+                out.append((tuple(a), tuple(b)))
+    return out
 
 
 def _one_attempt(cfg, rng):

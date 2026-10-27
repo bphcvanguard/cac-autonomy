@@ -305,7 +305,8 @@ def test_cli_vary_appearance_flag(tmp_path):
 # Golden output without --vary-appearance. If you change the arena ON PURPOSE (geometry, layout,
 # lighting defaults), regenerate and update these hashes in the same commit, and say why.
 GOLDEN_SDF_SHA256 = {
-    ('random', '3'): '65d2085cd58212dde201bfe9854869afa4bb512db38834f0058e910543603a5b',
+    # 2026-10-27: denser fields with obstacles biased onto the rover's routes (intentional)
+    ('random', '3'): '8f4499a539455681066d3405588ace9d4528abc595edadc960b4b0f6beb280e7',
     ('schematic', None): 'cb17a6e899b7efb90b3fcdce3c33734f715ba19aa64d78c00474c3f7bc8a270f',
 }
 
