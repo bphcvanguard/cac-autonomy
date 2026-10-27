@@ -1,0 +1,42 @@
+# STRESS LAYOUT: busy_dig
+# Run: generate_arena --layout busy_dig --out /tmp/arenas
+#
+# What it stresses: the dig -> berm haul with obstacles. The obstacle zone is an ordinary field
+# (taken from random seed 1, so it is as hard as any random arena). The excavation zone holds the
+# MAXIMUM the limits allow: 4 boulders and 3 craters (arena.yaml boulders/craters in_excavation_zone),
+# placed around the assumed dig spot (6.6, 1.4) and the haul route (randomiser.routes.haul:
+# (6.6, 1.4) -> (7.4, 2.4) -> (7.8, 3.3)).
+# Why: the rules only forbid obstacles in the start and construction zones, so the judges can pack the
+# digging area. The robot must pick a dig spot that is free of craters (a crater changes the sand
+# depth and the volume of a scoop), then drive loaded with sand, slowly, between boulders and craters
+# to the berm target box.
+# Clear space kept around the dig spot (6.6, 1.4): no obstacle within 0.8 m of its centre, so a
+# legal dig spot exists. A round robot (the same width as the rover) can drive from the dig spot
+# to the berm target (tested).
+# A good robot: rejects dig spots near a crater rim, replans the haul route when a crater shows up
+# late, and does not drop sand into a crater.
+# Start pose: (1.0, 1.0), yaw 0 deg = facing east.
+#
+# Strict check: passes with no issues.
+name: busy_dig
+seed: null
+boulders:
+  - {position: [3.311, 1.924], diameter: 0.329, height: 0.13}
+  - {position: [2.391, 0.475], diameter: 0.303, height: 0.23}
+  - {position: [0.698, 3.683], diameter: 0.362, height: 0.2}
+  - {position: [4.701, 0.734], diameter: 0.368, height: 0.28}
+  - {position: [6, 2], diameter: 0.35, height: 0.25}
+  - {position: [7.3, 0.9], diameter: 0.35, height: 0.22}
+  - {position: [7, 2.7], diameter: 0.35, height: 0.2}
+  - {position: [8.3, 2.2], diameter: 0.35, height: 0.25}
+craters:
+  - {position: [4.475, 1.552], diameter: 0.469}
+  - {position: [2.602, 1.162], diameter: 0.341}
+  - {position: [2.72, 4.38], diameter: 0.329}
+  - {position: [2.914, 0.634], diameter: 0.362}
+  - {position: [3.323, 2.828], diameter: 0.368}
+  - {position: [1.392, 3.908], diameter: 0.49}
+  - {position: [6, 0.7], diameter: 0.4}
+  - {position: [7.9, 1.3], diameter: 0.5}
+  - {position: [6.5, 2.3], diameter: 0.4}
+start_pose: {x: 1, y: 1, yaw_deg: 0}

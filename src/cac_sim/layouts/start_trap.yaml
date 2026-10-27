@@ -1,0 +1,34 @@
+# STRESS LAYOUT: start_trap
+# Run: generate_arena --layout start_trap --out /tmp/arenas
+#
+# What it stresses: leaving the start zone. Boulders sit right outside the start zone, as close as the
+# rules allow (0.10 m margin, randomiser.start_zone_margin): a column of three along the east side
+# (x = 2.3) and two along the north side (y = 2.3), leaving ONE exit on the north side, a 1.25 m wide
+# gap at x = 0.65 .. 1.90. The robot starts facing WEST, nose 0.25 m from the wall.
+# Why: nothing forces judges to leave the start zone open towards the field. A robot that drives
+# forward first hits the wall, and one that heads east meets the boulder column. The only way out
+# needs a turn of 90 degrees or more inside the 2 x 2 m zone, then a drive through a gap only
+# 0.3 m wider than the robot.
+# A good robot: sees the start-zone neighbourhood before moving, turns in place about 90 degrees
+# to face north (a skid-steer or similar), and drives out through the gap without clipping the
+# boulders on either side. No reversing is needed, but reversing is allowed.
+# Start pose: (1.0, 1.0), yaw 180 deg = facing west (the wall). Exit is to the north.
+#
+# Strict check: passes with no issues.
+name: start_trap
+seed: null
+boulders:
+  - {position: [0.45, 2.3], diameter: 0.4, height: 0.3}
+  - {position: [2.1, 2.3], diameter: 0.4, height: 0.3}
+  - {position: [2.3, 1.65], diameter: 0.4, height: 0.28}
+  - {position: [2.3, 1.05], diameter: 0.4, height: 0.3}
+  - {position: [2.3, 0.45], diameter: 0.4, height: 0.25}
+  - {position: [6, 0.8], diameter: 0.35, height: 0.25}
+  - {position: [8, 0.8], diameter: 0.35, height: 0.22}
+craters:
+  - {position: [3.2, 0.8], diameter: 0.4, depth_ratio: 0.15}
+  - {position: [3.5, 4], diameter: 0.4, depth_ratio: 0.2}
+  - {position: [2.6, 4.4], diameter: 0.4}
+  - {position: [4.2, 1], diameter: 0.4, depth_ratio: 0.18}
+  - {position: [7.5, 1.2], diameter: 0.4}
+start_pose: {x: 1, y: 1, yaw_deg: 180}

@@ -10,7 +10,7 @@ install(DIRECTORY config layouts DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/generate_arena DESTINATION lib/${PROJECT_NAME})
 
 # Generate the default worlds at build time and install them to share/cac_sim/worlds/:
-# schematic, empty, seed_0001 .. seed_<_n_random>. Re-runs when the config, layouts, python or script change.
+# schematic, empty, the five stress layouts (gate .. start_trap, ~2.4 s each), seed_0001 .. seed_<_n_random>. Re-runs when the config, layouts, python or script change.
 # All URIs in the SDF are relative, so the installed directories are relocatable.
 file(GLOB_RECURSE _gen_deps CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/config/*.yaml
@@ -26,6 +26,11 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E remove_directory ${_worlds_dir}
   COMMAND ${_gen} --layout schematic --out ${_worlds_dir}
   COMMAND ${_gen} --layout empty --out ${_worlds_dir}
+  COMMAND ${_gen} --layout gate --out ${_worlds_dir}
+  COMMAND ${_gen} --layout column_pinch --out ${_worlds_dir}
+  COMMAND ${_gen} --layout crater_field --out ${_worlds_dir}
+  COMMAND ${_gen} --layout busy_dig --out ${_worlds_dir}
+  COMMAND ${_gen} --layout start_trap --out ${_worlds_dir}
   COMMAND ${_gen} --layout random --seed 1 --count ${_n_random} --out ${_worlds_dir}
   COMMAND ${CMAKE_COMMAND} -E touch ${_worlds_stamp}
   DEPENDS ${_gen_deps} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_arena

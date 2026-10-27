@@ -19,7 +19,7 @@ Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders,
 
 ## Run a world
 
-`colcon build` generates and installs these worlds: `schematic` (organiser's example layout), `empty`, `seed_0001` to `seed_0005`.
+`colcon build` generates and installs these worlds: `schematic` (organiser's example layout), `empty`, the five stress layouts (`gate`, `column_pinch`, `crater_field`, `busy_dig`, `start_trap`; see below), `seed_0001` to `seed_0005`.
 
 Installed worlds live at `$(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/<name>/arena.sdf`. `seed_0001` to `seed_0005` have the same `arena.sdf` as `generate_arena --layout random --seed 1..5` output (checked for seed 1; the installed copy has no `truth/`).
 
@@ -53,7 +53,7 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 
 | Flag | Effect |
 |---|---|
-| `--layout` | `schematic`, `empty`, `random` or a layout YAML file |
+| `--layout` | `schematic`, `empty`, `random`, a stress layout name (below) or a layout YAML file |
 | `--seed N`, `--count K` | random layouts for seeds N .. N+K-1 (same seed = same arena) |
 | `--out DIR` | one sub-directory per world; the SDF uses relative paths, so it can be moved |
 | `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`; without it, or with a wrong dictionary name, the CLI prints an error to stderr and exits non-zero) |
@@ -81,6 +81,30 @@ CLI messages go to stderr: `warning [name]` = a hard problem (overlapping obstac
 Lighting imitates the indoor hall of the Artemis Arena: a dim directional key plus four overhead lamps 4.5 m above the sand, a high ambient so shadowed sides are not black, a neutral grey background and a visual-only grey hall floor starting 0.3 m outside the walls (no collision). Only the key casts shadows (one shadow pass, cheap enough for CPU laptops); `--low-gfx` turns even that off. Walls are beige, the column concrete grey. Rocks use three texture variants plus normal maps (sand and rock).
 
 Use `--vary-appearance` to test perception against venue conditions you cannot know in advance (dim or warm hall, greyer sand, other wall paint). The same layout with `--appearance-seed 1..N` gives N looks of one fixed obstacle field.
+
+## Stress-test layouts
+
+Hand-made, rule-legal layouts in `layouts/` that each push one hard case. Every one passes the hard
+checks and leaves a route for the 1.5 x 0.75 m footprint; the comment block at the top of each file
+says what it stresses, why, and what a good robot does. Run one by name (installed worlds are in
+`share/cac_sim/worlds/<name>/`; from the source tree use `src/cac_sim/scripts/generate_arena`):
+
+```bash
+ros2 run cac_sim generate_arena --layout gate --out /tmp/arenas
+gz sim -r /tmp/arenas/gate/arena.sdf
+```
+
+| Name | What it stresses | Start pose (x, y, heading) |
+|---|---|---|
+| `gate` | A barrier across the obstacle zone with ONE gap, 5 cm wider than the SE(2) minimum for the rover: precise planning, costmap inflation | (1.0, 1.4), east |
+| `column_pinch` | The only route is the lane between the column and a shallow crater: negative-obstacle detection next to a tall obstacle | (1.0, 1.4), east |
+| `crater_field` | 7 shallow craters (depth ratio 0.10-0.12) on the travel route, few boulders: crater detection, the hardest perception case | (1.0, 1.0), east |
+| `busy_dig` | Normal obstacle zone, but the excavation zone holds the maximum boulders and craters around the dig spot and haul route: dig spot choice, dig to berm haul | (1.0, 1.0), east |
+| `start_trap` | Boulders right outside the start zone, one exit to the north, start facing the west wall: turning in place, leaving the start zone | (1.0, 1.0), west |
+
+`gate` is the only one that breaks a strict rule (its gap is a straight corridor, so the 'slalom' rule
+reports it, on purpose). `test/test_stress_layouts.py` checks every one, and that the gate stays
+within 10 cm of the SE(2) minimum if the limits in `arena.yaml` change.
 
 ## Ground truth rule
 

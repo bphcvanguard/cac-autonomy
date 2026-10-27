@@ -1,0 +1,35 @@
+# STRESS LAYOUT: gate
+# Run: generate_arena --layout gate --out /tmp/arenas
+#
+# What it stresses: precise planning and costmap inflation. Five boulders (d 0.40 m) form a barrier
+# across the obstacle zone at x = 3.0, with ONE gap at y = 1.03 .. 2.11 m (1.08 m edge to edge,
+# centred at y = 1.57). The gap is the minimum the SE(2) check accepts for the 1.5 x 0.75 m rover
+# (found by bisection with se2_path_exists, about 1.03 m) plus 5 cm. That is only ~15 cm of
+# slack per side around a 0.75 m wide robot.
+# Why: judges must leave a route (rule), but nothing says it is wide. A costmap inflated by more than
+# ~0.2 m, or a planner that rounds the footprint up to a circle, closes the gate and the robot
+# gives up or drives the long way round (there is none).
+# A good robot: lines up on the gap from the start (it faces east, in line with it), keeps its
+# heading straight through the gate, and does not stop because the inflated costmap looks closed.
+# Start pose: (1.0, 1.4), yaw 0 deg = facing east, towards the gate.
+#
+# Strict check: the only issue is 'a straight eastward corridor is clear' (slalom rule). That is
+# intended: the gate IS a straight corridor, 0.2 m wider than the robot. The rest passes.
+# Craters use depth_ratio 0.12 (shallow); they sit away from the gate.
+name: gate
+seed: null
+boulders:
+  - {position: [3, 0.825], diameter: 0.4, height: 0.32}
+  - {position: [3, 2.305], diameter: 0.4, height: 0.3}
+  - {position: [3, 2.905], diameter: 0.4, height: 0.26}
+  - {position: [3, 3.505], diameter: 0.4, height: 0.33}
+  - {position: [3, 4.105], diameter: 0.4, height: 0.28}
+  - {position: [6, 0.8], diameter: 0.35, height: 0.25}
+  - {position: [8, 0.8], diameter: 0.35, height: 0.22}
+craters:
+  - {position: [4.2, 0.6], diameter: 0.4, depth_ratio: 0.12}
+  - {position: [4, 4.2], diameter: 0.4, depth_ratio: 0.12}
+  - {position: [1.2, 3.8], diameter: 0.4, depth_ratio: 0.12}
+  - {position: [2.2, 4.4], diameter: 0.4, depth_ratio: 0.12}
+  - {position: [7.5, 1.2], diameter: 0.4, depth_ratio: 0.12}
+start_pose: {x: 1, y: 1.4, yaw_deg: 0}
