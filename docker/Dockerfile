@@ -7,6 +7,8 @@
 FROM ros:jazzy-ros-base-noble AS base
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+# Retry dropped downloads instead of failing a 15-minute build on flaky Wi-Fi.
+RUN echo 'Acquire::Retries "5";' > /etc/apt/apt.conf.d/80-retries
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake git curl ca-certificates \

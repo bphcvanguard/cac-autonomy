@@ -176,6 +176,9 @@ Useful commands: `git status` · `git diff` · `git add -p` · `git fetch && git
 | `cannot open display` / no window appears | X11 access not allowed | Run `xhost +local:` on the host, and check `echo $DISPLAY` is set before `dev.sh up` |
 | `Permission denied` in `build/` or `install/` | Those folders were created by root (e.g. an old container) | `sudo rm -rf build install log` on the host, then rebuild |
 | `rosdep install` fails with "rosdep update" errors | rosdep cache missing | `rosdep update`, then retry |
+| `rosdep init` / `rosdep update` print `handshake operation timed out` | Slow or filtered network reaching raw.githubusercontent.com | Just re-run it until it succeeds (it often takes 2–3 tries on campus Wi-Fi) |
+| ROS install step: downloading `ros2-apt-source_*.deb` fails with `Connection reset by peer` | The network blocks `release-assets.githubusercontent.com` | Use the older official setup instead of the `.deb`:<br>`sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg`<br>`echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \| sudo tee /etc/apt/sources.list.d/ros2.list`<br>then `sudo apt update` and continue with the guide. Or use a phone hotspot for this one step. |
+| `apt` or `./scripts/dev.sh up` fails with `Unable to connect` / `TLS handshake timeout` | Network dropped mid-download | Re-run the same command. Finished steps are cached, so it resumes. |
 | Two machines can't see each other's topics | Different RMW or a firewall | Both use Cyclone DDS (`echo $RMW_IMPLEMENTATION`). Same `ROS_DOMAIN_ID`. Same network. |
 | `colcon test` fails on flake8 | Style errors | Read the listed lines. Single quotes, max 99 characters per line, imports sorted. |
 
