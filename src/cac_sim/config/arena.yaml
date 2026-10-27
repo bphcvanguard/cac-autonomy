@@ -48,6 +48,7 @@ boulders:
   # Excavation zone: may contain boulders no bigger than the obstacle-zone ones.
   diameter: [0.30, 0.40]
   height: [0.12, 0.35]              # ASSUMED range for "random heights"
+  max_height_ratio: 0.85           # ASSUMED: natural boulders are rarely taller than wide
   min_in_obstacle_zone: 3
   max_in_obstacle_zone: 6           # ASSUMED (schematic shows 5)
   in_excavation_zone: [0, 4]        # ASSUMED (schematic shows 4)
@@ -111,5 +112,5 @@ situational_cameras:
   - {name: sitcam_ne, position: [9.3, 5.3, 3.0], look_at: [4.5, 2.5, 0.0]}
 
 sand:
-  albedo: [0.76, 0.69, 0.52]        # dry tilled sand
+  albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
   tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres

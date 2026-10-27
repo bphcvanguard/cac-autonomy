@@ -19,6 +19,9 @@ STREAM_ROCK = 3      # rock shape
 STREAM_SAND_TEX = 4
 STREAM_ROCK_TEX = 5
 STREAM_DEPTH = 6     # crater depth ratios (per crater index)
+STREAM_SAND_NRM = 11
+STREAM_ROCK_NRM = 12
+STREAM_UV = 13       # terrain UV warp (anti-tiling)
 
 UV_TILE = 1.0        # metres of terrain per texture repeat
 
@@ -343,79 +346,203 @@ def build_terrain(cfg, layout, seed, res=0.05, fine_res=0.015, max_triangles=800
     z = surface_height(cfg, layout, x, y, seed)
     v = np.column_stack([x, y, z])
     f = np.asarray(tris, dtype=np.int64)
-    return Mesh(vertices=v, faces=f, uvs=np.column_stack([x, y]) / UV_TILE,
-                normals=_vertex_normals(v, f))
+    return Mesh(vertices=v, faces=f, uvs=terrain_uv(x, y, seed), normals=_vertex_normals(v, f))
+
+
+UV_WARP = 0.025      # m per warp wave (3 waves per axis): breaks the 1 m texture-repeat grid
+
+
+def terrain_uv(x, y, seed):
+    """Terrain texture coordinates: (x, y) / UV_TILE plus a gentle low-frequency domain warp.
+
+    The warp (3 waves per axis, 1.6-3.4 m wavelength, <= 7.5 cm displacement, <= ~25 % local
+    stretch) shifts each 1 m repeat of the sand texture by a different amount, so the tiling
+    grid does not line up into visible rows from robot height. Smooth and fold-free.
+    """
+    rng = np.random.default_rng([_seed(seed), STREAM_UV])
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = []
+    for base in (x, y):
+        w = base.copy()
+        for _ in range(3):
+            ang = rng.uniform(0, 2 * np.pi)
+            k = 2 * np.pi / rng.uniform(1.6, 3.4)
+            w = w + UV_WARP * np.sin(k * (math.cos(ang) * x + math.sin(ang) * y)
+                                     + rng.uniform(0, 2 * np.pi))
+        out.append(w / UV_TILE)
+    return np.column_stack(out)
 
 
 # ---------------------------------------------------------------------------------------------
 # Rocks
 # ---------------------------------------------------------------------------------------------
 
-def _icosphere(subdiv):
-    t = (1.0 + 5 ** 0.5) / 2.0
-    v = [(-1, t, 0), (1, t, 0), (-1, -t, 0), (1, -t, 0), (0, -1, t), (0, 1, t), (0, -1, -t),
-         (0, 1, -t), (t, 0, -1), (t, 0, 1), (-t, 0, -1), (-t, 0, 1)]
-    f = [(0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10), (0, 10, 11), (1, 5, 9), (5, 11, 4),
-         (11, 10, 2), (10, 7, 6), (7, 1, 8), (3, 9, 4), (3, 4, 2), (3, 2, 6), (3, 6, 8),
-         (3, 8, 9), (4, 9, 5), (2, 4, 11), (6, 2, 10), (8, 6, 7), (9, 8, 1)]
-    v = [np.array(p, dtype=float) / np.linalg.norm(p) for p in v]
-    for _ in range(subdiv):
-        mid = {}
+def _convex_hull(p, eps=1e-9):
+    """Triangles (CCW seen from outside) of the convex hull of points p (N, 3), N >= 4.
 
-        def m(a, b):
-            key = (min(a, b), max(a, b))
-            if key not in mid:
-                p = v[a] + v[b]
-                v.append(p / np.linalg.norm(p))
-                mid[key] = len(v) - 1
-            return mid[key]
-        nf = []
-        for a, b, c in f:
-            ab, bc, ca = m(a, b), m(b, c), m(c, a)
-            nf += [(a, ab, ca), (b, bc, ab), (c, ca, bc), (ab, bc, ca)]
-        f = nf
-    return np.array(v), np.array(f, dtype=np.int64)
+    Incremental hull; points inside the hull are left unreferenced. Assumes the points are not
+    all coplanar (the rock generator jitters them).
+    """
+    i0 = int(np.argmin(p[:, 0]))
+    i1 = int(np.argmax(np.linalg.norm(p - p[i0], axis=1)))
+    i2 = int(np.argmax(np.linalg.norm(np.cross(p - p[i0], p[i1] - p[i0]), axis=1)))
+    i3 = int(np.argmax(np.abs((p - p[i0]) @ np.cross(p[i1] - p[i0], p[i2] - p[i0]))))
+    inside = p[[i0, i1, i2, i3]].mean(axis=0)
+    faces = []
+    for a, b, c in ((i0, i1, i2), (i0, i2, i3), (i0, i3, i1), (i1, i3, i2)):
+        if np.dot(np.cross(p[b] - p[a], p[c] - p[a]), inside - p[a]) > 0:
+            b, c = c, b
+        faces.append((a, b, c))
+    for i in range(len(p)):
+        if i in (i0, i1, i2, i3):
+            continue
+        f = np.asarray(faces)
+        a = p[f[:, 0]]
+        nrm = np.cross(p[f[:, 1]] - a, p[f[:, 2]] - a)
+        vis = np.einsum('ij,ij->i', p[i] - a, nrm) > eps * np.linalg.norm(nrm, axis=1)
+        if not vis.any():
+            continue
+        edges = {(u, w) for t in f[vis] for u, w in ((t[0], t[1]), (t[1], t[2]), (t[2], t[0]))}
+        faces = [tuple(t) for t in f[~vis]]
+        faces += [(u, w, i) for u, w in edges if (w, u) not in edges]
+    return np.asarray(faces, dtype=np.int64)
+
+
+def _subdivide(v, f):
+    """One 1-to-4 midpoint split (shared edges get one shared midpoint, so it stays closed)."""
+    v = list(v)
+    mid = {}
+
+    def m(a, b):
+        key = (min(a, b), max(a, b))
+        if key not in mid:
+            v.append(0.5 * (v[a] + v[b]))
+            mid[key] = len(v) - 1
+        return mid[key]
+    nf = []
+    for a, b, c in f:
+        ab, bc, ca = m(a, b), m(b, c), m(c, a)
+        nf += [(a, ab, ca), (b, bc, ab), (c, ca, bc), (ab, bc, ca)]
+    return np.asarray(v), np.asarray(nf, dtype=np.int64)
+
+
+def _split_normals(v, f, crease_deg):
+    """Auto-smooth: per-corner normals that average only faces within `crease_deg` of each other.
+
+    Returns (vertices, faces, normals, source_index) where a vertex is duplicated once per distinct
+    corner normal, so sharp rock edges shade as edges while gently curved areas stay smooth.
+    Positions are unchanged: the surface is still closed (weld by position to check).
+    """
+    fn = np.cross(v[f[:, 1]] - v[f[:, 0]], v[f[:, 2]] - v[f[:, 0]])     # area-weighted
+    fu = fn / np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-20)
+    cos_t = math.cos(math.radians(crease_deg))
+    inc = [[] for _ in range(len(v))]
+    for j, t in enumerate(f):
+        for k in t:
+            inc[k].append(j)
+    keys, out_n, src = {}, [], []
+    nf = np.empty_like(f)
+    for j, t in enumerate(f):
+        for c, k in enumerate(t):
+            g = np.asarray(inc[k])
+            g = g[fu[g] @ fu[j] > cos_t]
+            n = fn[g].sum(axis=0)
+            n /= max(np.linalg.norm(n), 1e-20)
+            key = (int(k), *np.round(n, 3))
+            idx = keys.get(key)
+            if idx is None:
+                idx = keys[key] = len(src)
+                src.append(int(k))
+                out_n.append(n)
+            nf[j, c] = idx
+    src = np.asarray(src, dtype=np.int64)
+    return v[src], nf, np.asarray(out_n), src
+
+
+ROCK_UV_SCALE = 0.3    # metres of rock surface per rock-texture repeat
+ROCK_CREASE_DEG = 36.0
+ROCK_ROUND = 0.25      # Laplacian smoothing weight (0 = sharp hull, 1 = blob)
 
 
 def rock_mesh(diameter, height, seed, sink=0.04):
-    """Irregular closed boulder: origin at base centre, top at z = height, footprint ~diameter.
+    """Irregular, angular closed boulder: origin at base centre, top at z = height.
 
-    The underside extends `sink` metres below z = 0 so a rock placed a few cm into the sand shows
-    no gap. 320 triangles.
+    Footprint (max horizontal extent) = diameter. The underside extends `sink` metres below
+    z = 0 so a rock placed a few cm into the sand shows no gap. Shape: convex hull of 18-33
+    jittered points on a random ellipsoid (elongation, flat base, blunt top, taper, sometimes a
+    fracture face), split once 1-to-4, one light Laplacian pass (weathered edges), then
+    low-frequency radial noise and 1-3 shallow dents so the facets are not CAD-flat. Edges sharper
+    than ROCK_CREASE_DEG keep split normals (auto-smooth): it shades as angular stone, not a
+    blob. <= 256 triangles; UVs are a planar projection (seamless texture, ROCK_UV_SCALE m/tile).
     """
     rng = np.random.default_rng([_seed(seed), STREAM_ROCK])
-    d, f = _icosphere(2)
-    # Low-frequency radial noise (sum of random plane waves on the sphere) + a few flat facets.
-    r = np.ones(len(d))
-    for _ in range(6):
+    n = int(rng.integers(18, 34))
+    d = rng.normal(size=(n, 3))
+    d /= np.linalg.norm(d, axis=1, keepdims=True)
+    axes = np.array([1.0, rng.uniform(0.55, 1.0), rng.uniform(0.55, 0.95)])
+    p = d * rng.uniform(0.80, 1.0, (n, 1)) * axes
+    # Flat base (bedding plane / sunk underside) and, for some rocks, a flat-ish top.
+    zb = -rng.uniform(0.25, 0.6) * axes[2]
+    p[:, 2] = np.maximum(p[:, 2], zb + rng.uniform(0.0, 0.03, n) * axes[2])
+    # Blunt top: several points share a top level, so the summit is a facet, never a spike.
+    zt = np.quantile(p[:, 2], rng.uniform(0.6, 0.9))
+    p[:, 2] = np.minimum(p[:, 2], zt - rng.uniform(0.0, 0.06, n) * axes[2])
+    # A tilted cut for some (a fracture face).
+    if rng.uniform() < 0.5:
+        w = rng.normal(size=3)
+        w[2] = abs(w[2]) * 0.6
+        w /= np.linalg.norm(w)
+        proj = p @ w
+        cut = np.quantile(proj, rng.uniform(0.7, 0.85))
+        p -= np.maximum(proj - cut, 0.0)[:, None] * w[None, :]
+    # Taper: boulders are wider at the base than at the top (no cylinder-like sides).
+    zn = (p[:, 2] - p[:, 2].min()) / (np.ptp(p[:, 2]) + 1e-12)
+    p[:, :2] *= (1.0 - rng.uniform(0.1, 0.3) * zn)[:, None]
+    p += rng.normal(scale=0.004, size=p.shape)       # break exact coplanarity
+    f = _convex_hull(p)
+    used = np.unique(f)
+    remap = np.full(len(p), -1, dtype=np.int64)
+    remap[used] = np.arange(len(used))
+    v, f = _subdivide(p[used], remap[f])
+    # One Laplacian pass: rounds the hull's corners and edges a little (weathered, not cut glass).
+    nb = np.zeros_like(v)
+    cnt = np.zeros(len(v))
+    for a, b in ((0, 1), (1, 2), (2, 0)):
+        np.add.at(nb, f[:, a], v[f[:, b]])
+        np.add.at(nb, f[:, b], v[f[:, a]])
+        np.add.at(cnt, f[:, a], 1)
+        np.add.at(cnt, f[:, b], 1)
+    v = v + ROCK_ROUND * (nb / cnt[:, None] - v)
+    # Low-frequency radial noise + shallow dents (weathering; makes it slightly non-convex).
+    c = v.mean(axis=0)
+    rel = v - c
+    r = np.linalg.norm(rel, axis=1)
+    u = rel / r[:, None]
+    scale = np.ones(len(v))
+    for _ in range(4):
         w = rng.normal(size=3)
         w /= np.linalg.norm(w)
-        r += rng.uniform(0.04, 0.09) * np.sin(rng.uniform(1.5, 3.5) * d @ w + rng.uniform(0, 6.3))
-    for _ in range(3):
-        nrm = rng.normal(size=3)
-        nrm[2] = abs(nrm[2]) * 0.5
-        nrm /= np.linalg.norm(nrm)
-        cut = rng.uniform(0.80, 0.92)
-        proj = d @ nrm * r
-        over = proj > cut
-        r[over] *= cut / proj[over]
-    p = d * r[:, None]
-    # Widest girth about a third of the way up; the bottom is flattened.
-    pz = np.maximum(p[:, 2], -0.75)
-    eq = 0.35 * height
-    z = np.where(pz >= 0, eq + pz * (height - eq), eq + pz / 0.75 * (eq + sink))
-    aspect = rng.uniform(0.82, 1.0)
-    rot = rng.uniform(0, 2 * np.pi)
-    x, y = p[:, 0], p[:, 1] * aspect
-    x, y = x * math.cos(rot) - y * math.sin(rot), x * math.sin(rot) + y * math.cos(rot)
-    xy = np.column_stack([x, y])
-    xy -= 0.5 * (xy.max(axis=0) + xy.min(axis=0))
+        scale += rng.uniform(0.015, 0.03) * np.sin(rng.uniform(2.0, 5.0) * (u @ w)
+                                                   + rng.uniform(0, 2 * np.pi))
+    for _ in range(int(rng.integers(1, 4))):
+        w = rng.normal(size=3)
+        w /= np.linalg.norm(w)
+        scale -= rng.uniform(0.02, 0.05) * np.exp(-(1.0 - u @ w) / rng.uniform(0.02, 0.06))
+    v = c + rel * scale[:, None]
+    # Vertical: the lowest `gf` of the shape is underground (compressed into [-sink, 0]).
+    zmin, zmax = v[:, 2].min(), v[:, 2].max()
+    zg = zmin + rng.uniform(0.15, 0.3) * (zmax - zmin)
+    z = np.where(v[:, 2] >= zg, (v[:, 2] - zg) / (zmax - zg) * height,
+                 (v[:, 2] - zg) / (zg - zmin) * sink)
+    xy = v[:, :2] - 0.5 * (v[:, :2].max(axis=0) + v[:, :2].min(axis=0))
     xy *= diameter / (xy.max(axis=0) - xy.min(axis=0)).max()
-    z = (z + sink) * (height + sink) / (z.max() + sink) - sink
     v = np.column_stack([xy, z])
-    # Box-ish projection: works with the seamless rock texture, no spherical seam.
-    uv = np.column_stack([(v[:, 0] + 0.6 * v[:, 1]) / 0.3, (v[:, 2] + 0.4 * v[:, 1]) / 0.3])
-    return Mesh(vertices=v, faces=f, uvs=uv, normals=_vertex_normals(v, f))
+    v, f, nrm, _src = _split_normals(v, f, ROCK_CREASE_DEG)
+    # Planar projection along a tilted axis: continuous across split vertices (no seams).
+    uv = np.column_stack([(v[:, 0] + 0.6 * v[:, 1]) / ROCK_UV_SCALE,
+                          (v[:, 2] + 0.4 * v[:, 1] - 0.3 * v[:, 0]) / ROCK_UV_SCALE])
+    return Mesh(vertices=v, faces=f, uvs=uv, normals=nrm)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -489,36 +616,132 @@ def _tile_noise(rng, size, wavelength_px, slope=0.0):
     return out / (out.std() + 1e-12)
 
 
-def sand_texture(path, seed, size=1024, albedo=(0.76, 0.69, 0.52)):
-    """Seamless dry-sand albedo (1 tile = UV_TILE metres): grains + soft mottling."""
+def _smooth_mask(x, sharp=1.5):
+    return 0.5 + 0.5 * np.tanh(sharp * x)
+
+
+def _normalise_mean(img, albedo):
+    """Scale each channel so its mean (after clipping) is `albedo`."""
+    img = np.clip(img, 0.0, 1.0)
+    for _ in range(3):
+        img = np.clip(img * (np.asarray(albedo) / img.reshape(-1, 3).mean(axis=0)), 0.0, 1.0)
+    return img
+
+
+def sand_texture(path, seed, size=1024, albedo=(0.75, 0.68, 0.55)):
+    """Seamless dry fine-sand albedo (1 tile = UV_TILE metres), channel means == `albedo`.
+
+    Fine grain (1-3 mm) with per-grain colour scatter, sparse coarse grains, 2-5 cm clumping and
+    only weak, multi-scale large mottling: a strong single-scale blotch is what makes a 1 m tile
+    visibly repeat from robot height, so the low frequencies are kept faint and broadband.
+    """
     rng = np.random.default_rng([_seed(seed), STREAM_SAND_TEX])
     base = np.asarray(albedo, dtype=float)
-    mottle = _tile_noise(rng, size, size / 3.0)            # ~30 cm patches
-    mid = _tile_noise(rng, size, size / 25.0)              # ~4 cm
-    grain = _tile_noise(rng, size, 2.0)                    # 1-2 mm grains
-    lum = 1.0 + 0.05 * mottle + 0.04 * mid + 0.10 * grain
-    # Occasional dark/light grains (mineral specks).
+    mottle = (_tile_noise(rng, size, size / 2.0) + 0.7 * _tile_noise(rng, size, size / 5.0)
+              + 0.5 * _tile_noise(rng, size, size / 11.0)) / 1.35
+    clump = _tile_noise(rng, size, size / 30.0)               # ~3 cm
+    grain = _tile_noise(rng, size, 1.8)                        # ~1-2 mm
+    grain2 = _tile_noise(rng, size, 3.5)                       # ~3 mm
+    lum = 1.0 + 0.025 * mottle + 0.03 * clump + 0.07 * grain + 0.04 * grain2
+    # Sparse coarse grains / tiny clods (2-4 px blobs), darker or lighter.
+    blob = _tile_noise(rng, size, 3.0)
+    sel = rng.random((size, size))
+    lum = lum - 0.10 * ((blob > 2.3) & (sel < 0.5)) + 0.08 * ((blob > 2.3) & (sel >= 0.5))
     speck = rng.random((size, size))
-    lum = lum - 0.25 * (speck > 0.996) + 0.15 * (speck < 0.004)
-    hue = 0.03 * _tile_noise(rng, size, size / 6.0)        # warm/cool drift
+    lum = lum - 0.22 * (speck > 0.997) + 0.12 * (speck < 0.003)
     img = base[None, None, :] * lum[:, :, None]
-    img[:, :, 0] *= 1.0 + hue
-    img[:, :, 2] *= 1.0 - hue
-    return write_png(path, img)
+    # Per-grain mineral colour scatter (quartz/feldspar/dark grains) + a faint warm/cool drift.
+    tint = 0.025 * _tile_noise(rng, size, 1.8) + 0.008 * _tile_noise(rng, size, size / 4.0)
+    img[:, :, 0] *= 1.0 + tint
+    img[:, :, 2] *= 1.0 - 1.5 * tint
+    return write_png(path, _normalise_mean(img, base))
+
+
+def _normal_png(path, h, rms_slope):
+    """Tangent-space normal map (OpenGL convention: +x = +u, +y = +v) from a periodic height."""
+    size = h.shape[0]
+    k = 2j * np.pi * np.fft.fftfreq(size)
+    H = np.fft.fft2(h)
+    d_col = np.real(np.fft.ifft2(H * k[None, :]))      # dh / d(column) = dh / du
+    d_row = np.real(np.fft.ifft2(H * k[:, None]))      # dh / d(row) = -dh / dv (row 0 is v = 1)
+    s = rms_slope / (np.sqrt(np.mean(d_col ** 2 + d_row ** 2)) + 1e-12)
+    n = np.stack([-s * d_col, s * d_row, np.ones_like(h)], axis=-1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True)
+    return write_png(path, 0.5 * n + 0.5)
+
+
+def sand_normal_map(path, seed, size=1024, rms_slope=0.22):
+    """Seamless tangent-space normal map of fine sand relief (grains + small clumps).
+
+    Same tiling as sand_texture (1 tile = UV_TILE m). For a PBR <normal_map> on the terrain.
+    """
+    rng = np.random.default_rng([_seed(seed), STREAM_SAND_NRM])
+    h = (_tile_noise(rng, size, 2.0) + 0.8 * _tile_noise(rng, size, 5.0)
+         + 6.0 * _tile_noise(rng, size, size / 40.0) + 12.0 * _tile_noise(rng, size, size / 12.0))
+    return _normal_png(path, h, rms_slope)
+
+
+# (main colour, secondary/stain colour, bedding strata?) - tan / buff / light-grey stone.
+ROCK_PALETTES = (
+    ((0.74, 0.65, 0.52), (0.64, 0.58, 0.50), True),     # warm tan sandstone, greyer patches
+    ((0.79, 0.72, 0.61), (0.74, 0.63, 0.52), False),    # light buff, pinkish-tan stains
+    ((0.70, 0.68, 0.63), (0.73, 0.66, 0.55), False),    # light-grey limestone, tan stains
+    ((0.76, 0.67, 0.55), (0.67, 0.61, 0.54), True),     # mid tan, banded
+)
+
+
+def _rock_albedo(rng, size, palette):
+    main, stain, strata = palette
+    jit = 1.0 + rng.uniform(-0.04, 0.04, 3)
+    main = np.asarray(main) * jit
+    stain = np.asarray(stain) * jit
+    mix = 0.75 * _smooth_mask(_tile_noise(rng, size, size / 3.0)
+                              + 0.4 * _tile_noise(rng, size, size / 10.0), 1.0)
+    img = main[None, None, :] * (1 - mix[:, :, None]) + stain[None, None, :] * mix[:, :, None]
+    lum = (1.0 + 0.05 * _tile_noise(rng, size, size / 6.0)
+           + 0.05 * _tile_noise(rng, size, size / 24.0) + 0.09 * _tile_noise(rng, size, 2.0)
+           + 0.05 * _tile_noise(rng, size, 5.0))
+    if strata:
+        # Bedding bands: an integer number of (warped) periods per tile, so still seamless.
+        rows = np.arange(size)[:, None] / size
+        warp = 0.06 * _tile_noise(rng, size, size / 2.0) + 0.01 * _tile_noise(rng, size, size / 12)
+        per = int(rng.integers(5, 10))
+        lum += 0.045 * np.sin(2 * np.pi * per * (rows + warp)) + 0.02 * np.sin(
+            2 * np.pi * 3 * per * (rows + warp) + 1.0)
+    # Hairline cracks / crevices (ridged noise -> thin dark lines) and small pits.
+    ridge = 1.0 - np.abs(_tile_noise(rng, size, size / 6.0)) / 3.0
+    lum -= 0.22 * np.clip(ridge, 0, 1) ** 40
+    pits = _tile_noise(rng, size, 4.0)
+    lum -= 0.18 * np.clip(pits - 2.0, 0, 1.0)
+    speck = rng.random((size, size))
+    lum = lum - 0.35 * (speck > 0.996) + 0.18 * (speck < 0.008)
+    return np.clip(img * lum[:, :, None], 0.0, 1.0)
 
 
 def rock_texture(path, seed, size=512):
-    """Seamless grey-brown speckled rock albedo."""
+    """Seamless tan sandstone albedo (grain, speckle, stains, faint bedding, darker crevices)."""
     rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX])
-    base = np.array([0.46, 0.42, 0.37])
-    blotch = _tile_noise(rng, size, size / 4.0)
-    mid = _tile_noise(rng, size, size / 20.0)
-    fine = _tile_noise(rng, size, 2.5)
-    lum = 1.0 + 0.10 * blotch + 0.08 * mid + 0.12 * fine
-    speck = rng.random((size, size))
-    lum = lum - 0.35 * (speck > 0.985) + 0.30 * (speck < 0.01)
-    tint = 0.06 * _tile_noise(rng, size, size / 5.0)
-    img = base[None, None, :] * lum[:, :, None]
-    img[:, :, 0] *= 1.0 + tint
-    img[:, :, 2] *= 1.0 - tint
-    return write_png(path, img)
+    return write_png(path, _rock_albedo(rng, size, ROCK_PALETTES[0]))
+
+
+def rock_texture_variants(out_dir, seed, n=3, size=512):
+    """Write rock_0.png .. rock_{n-1}.png (different stone palettes and grain) into out_dir.
+
+    Returns the file names (not paths), e.g. ['rock_0.png', 'rock_1.png', 'rock_2.png'].
+    """
+    out_dir = Path(out_dir)
+    names = []
+    for k in range(int(n)):
+        rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX, k])
+        name = 'rock_%d.png' % k
+        write_png(out_dir / name, _rock_albedo(rng, size, ROCK_PALETTES[k % len(ROCK_PALETTES)]))
+        names.append(name)
+    return names
+
+
+def rock_normal_map(path, seed, size=512, rms_slope=0.35):
+    """Seamless tangent-space normal map for rocks (pitted, weathered stone surface)."""
+    rng = np.random.default_rng([_seed(seed), STREAM_ROCK_NRM])
+    h = (_tile_noise(rng, size, 2.5) + 1.5 * _tile_noise(rng, size, 6.0)
+         + 6.0 * _tile_noise(rng, size, size / 20.0) + 10.0 * _tile_noise(rng, size, size / 6.0))
+    return _normal_png(path, h, rms_slope)

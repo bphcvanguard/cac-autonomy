@@ -21,8 +21,14 @@ FINE_RES = 0.02
 SINK = 0.01          # rock_mesh already extends 4 cm below its origin; this makes the total ~5 cm
 OVERLAY_Z = 0.02     # above the +/- tilled-sand relief (a z of 0.002 would be buried by it)
 
-WALL_RGB = (0.62, 0.50, 0.36)
-CONCRETE_RGB = (0.55, 0.55, 0.55)
+WALL_RGB = (0.84, 0.78, 0.64)       # light-beige painted plywood (Artemis Arena walls)
+CONCRETE_RGB = (0.62, 0.62, 0.60)   # painted concrete column
+SUBFLOOR_RGB = (0.62, 0.50, 0.36)   # hidden: matches sand tone in case it ever shows
+HALL_FLOOR_RGB = (0.50, 0.51, 0.52)  # polished-concrete hall floor outside the walls
+ROCK_VARIANTS = 3
+HALL_MARGIN = 0.3        # hall floor starts at least this far outside the inner wall faces
+HALL_EXTENT = 30.0       # how far the hall floor reaches beyond the arena
+LIGHT_HEIGHT = 4.5       # overhead lamps above the sand
 
 
 def _f(*vals):
@@ -43,10 +49,11 @@ def _material(rgb, rough=0.9, metal=0.0, emissive=None, alpha=1.0):
             '</metal></pbr></material>')
 
 
-def _tex_material(albedo_uri, rough=0.95):
+def _tex_material(albedo_uri, rough=0.95, normal_uri=None):
+    nm = f'<normal_map>{escape(normal_uri)}</normal_map>' if normal_uri else ''
     return ('<material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse>'
             '<specular>0.05 0.05 0.05 1</specular>'
-            f'<pbr><metal><albedo_map>{escape(albedo_uri)}</albedo_map>'
+            f'<pbr><metal><albedo_map>{escape(albedo_uri)}</albedo_map>{nm}'
             f'<roughness>{rough}</roughness><metalness>0</metalness></metal></pbr></material>')
 
 
@@ -75,7 +82,7 @@ def _walls(cfg):
     d = cfg['arena']['sand_depth']
     H = h + d
     zc = (h - d) / 2
-    mat = _material(WALL_RGB, rough=0.8)
+    mat = _material(WALL_RGB, rough=0.85)
     out = []
     # inner faces exactly at x=0, x=L, y=0, y=W; the long walls span the corners
     out.append(_box_model('wall_south', (L + 2 * t, t, H), _pose(L / 2, -t / 2, zc), mat))
@@ -90,7 +97,30 @@ def _floor(cfg):
     L, W = cfg['arena']['size']
     d = cfg['arena']['sand_depth']
     return _box_model('subfloor', (L, W, 0.2), _pose(L / 2, W / 2, -d - 0.1),
-                      _material((0.3, 0.3, 0.3)), shadows=False)
+                      _material(SUBFLOOR_RGB, rough=1.0), shadows=False)
+
+
+def _hall_floor(cfg):
+    """Visual-only grey hall floor outside the walls, so the horizon is not empty sky.
+
+    Four slabs whose tops sit just below the sand (-sand_depth - 2 cm), so from inside the arena
+    the walls always hide them. They start at least HALL_MARGIN outside the inner wall faces
+    (never inside the arena), have no collision and cast no shadows.
+    """
+    L, W = cfg['arena']['size']
+    t = cfg['arena']['wall']['thickness']
+    d = cfg['arena']['sand_depth']
+    m = max(HALL_MARGIN, t + 0.02)
+    e = HALL_EXTENT
+    th = 0.1
+    z = -d - 0.02 - th / 2
+    mat = _material(HALL_FLOOR_RGB, rough=0.6)
+    slabs = (('hall_south', L + 2 * m + 2 * e, e, L / 2, -m - e / 2),
+             ('hall_north', L + 2 * m + 2 * e, e, L / 2, W + m + e / 2),
+             ('hall_west', e, W + 2 * m, -m - e / 2, W / 2),
+             ('hall_east', e, W + 2 * m, L + m + e / 2, W / 2))
+    return [_box_model(n, (sx, sy, th), _pose(x, y, z), mat, collision=False, shadows=False)
+            for n, sx, sy, x, y in slabs]
 
 
 def _column(cfg):
@@ -141,14 +171,16 @@ def _terrain():
             '<surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction></surface>'
             '</collision>'
             f'<visual name="visual">{_mesh_geom("meshes/terrain.obj")}'
-            f'{_tex_material("materials/sand.png", 0.97)}</visual></link></model>')
+            f'{_tex_material("materials/sand.png", 0.97, "materials/sand_normal.png")}'
+            '</visual></link></model>')
 
 
 def _boulder(cfg, layout, i, b, seed, yaw):
     x, y = b['position']
     z = _surface(cfg, layout, x, y, seed) - SINK
     geom = _mesh_geom(f'meshes/rock_{i}.obj')
-    tex = _tex_material('materials/rock.png', 0.9)
+    tex = _tex_material(f'materials/rock_{i % ROCK_VARIANTS}.png', 0.9,
+                        'materials/rock_normal.png')
     return (f'<model name="rock_{i}"><static>true</static>{_pose(x, y, z, 0, 0, yaw)}'
             '<link name="link">'
             f'<collision name="collision">{geom}</collision>'
@@ -332,16 +364,26 @@ def _overlay(cfg, layout):
             + vis + '</link></model>')
 
 
-def _lights(low_gfx):
+def _lights(cfg, low_gfx):
+    """Indoor rig: a dim directional key plus a grid of overhead lamps (no shadows).
+
+    Only the key casts shadows (one shadow pass is all a CPU laptop can afford) and --low-gfx
+    turns even that off, so the low-gfx world has zero shadow casters.
+    """
+    L, W = cfg['arena']['size']
     sh = 'false' if low_gfx else 'true'
-    return (
-        f'<light type="directional" name="key"><cast_shadows>{sh}</cast_shadows>'
-        '<pose>0 0 10 0 0 0</pose><diffuse>0.9 0.9 0.85 1</diffuse>'
-        '<specular>0.2 0.2 0.2 1</specular>'
-        '<direction>-0.4 0.3 -0.85</direction></light>'
-        '<light type="directional" name="fill"><cast_shadows>false</cast_shadows>'
-        '<pose>0 0 10 0 0 0</pose><diffuse>0.35 0.37 0.42 1</diffuse><specular>0 0 0 1</specular>'
-        '<direction>0.5 -0.4 -0.6</direction></light>')
+    out = (f'<light type="directional" name="key"><cast_shadows>{sh}</cast_shadows>'
+           '<pose>0 0 10 0 0 0</pose><diffuse>0.55 0.55 0.52 1</diffuse>'
+           '<specular>0.05 0.05 0.05 1</specular>'
+           '<direction>-0.25 0.2 -0.95</direction></light>')
+    for i, fx in enumerate((0.3, 0.7)):
+        for j, fy in enumerate((0.27, 0.73)):
+            out += (f'<light type="point" name="lamp_{i}{j}"><cast_shadows>false</cast_shadows>'
+                    f'{_pose(fx * L, fy * W, LIGHT_HEIGHT)}'
+                    '<diffuse>0.42 0.42 0.4 1</diffuse><specular>0.02 0.02 0.02 1</specular>'
+                    '<attenuation><range>14</range><constant>1.0</constant><linear>0.0</linear>'
+                    '<quadratic>0.004</quadratic></attenuation></light>')
+    return out
 
 
 def _header(low_gfx):
@@ -356,7 +398,7 @@ def _header(low_gfx):
         '<render_engine>ogre2</render_engine></plugin>'
         '<plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>'
         '<plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>'
-        '<scene><ambient>0.45 0.45 0.45 1</ambient><background>0.55 0.6 0.66 1</background>'
+        '<scene><ambient>0.42 0.42 0.42 1</ambient><background>0.62 0.63 0.64 1</background>'
         f'<shadows>{"false" if low_gfx else "true"}</shadows><grid>false</grid></scene>')
 
 
@@ -378,11 +420,14 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     geometry.write_obj(root / 'meshes' / 'terrain.obj', terrain)
     coarse = geometry.build_terrain(cfg, layout, seed, COLLISION_RES, COLLISION_RES)
     geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse)
-    geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024)
-    geometry.rock_texture(root / 'materials' / 'rock.png', seed, 512)
+    geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
+                          albedo=tuple(cfg['sand']['albedo']))
+    geometry.sand_normal_map(root / 'materials' / 'sand_normal.png', seed, 1024)
+    geometry.rock_texture_variants(root / 'materials', seed, ROCK_VARIANTS)
+    geometry.rock_normal_map(root / 'materials' / 'rock_normal.png', seed, 512)
 
     yaw_rng = np.random.default_rng([seed, 7])    # own stream: boulder yaw
-    models = [_terrain(), _floor(cfg), *_walls(cfg), *_pipes(cfg), _column(cfg)]
+    models = [_terrain(), _floor(cfg), *_hall_floor(cfg), *_walls(cfg), *_pipes(cfg), _column(cfg)]
     for i, b in enumerate(layout['boulders']):
         geometry.write_obj(root / 'meshes' / f'rock_{i}.obj',
                            geometry.rock_mesh(b['diameter'], b['height'], seed * 1000 + i))
@@ -395,7 +440,7 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
         models.append(_overlay(cfg, layout))
 
     sdf = (f'<?xml version="1.0"?><sdf version="1.9"><world name="cac_arena">{_header(low_gfx)}'
-           f'{_lights(low_gfx)}{"".join(models)}</world></sdf>')
+           f'{_lights(cfg, low_gfx)}{"".join(models)}</world></sdf>')
     (root / 'arena.sdf').write_text(_pretty(sdf))
 
     # Ground truth lives in its own sub-directory so it is never installed with the world.

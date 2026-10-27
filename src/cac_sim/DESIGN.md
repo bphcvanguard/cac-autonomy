@@ -14,7 +14,7 @@ Output for one layout `<name>` is a self-contained directory:
   meshes/terrain.obj        visual sand surface, craters carved in, tilled roughness, UVs
   meshes/terrain_collision.obj   coarser copy for physics
   meshes/rock_<i>.obj       one mesh per boulder
-  materials/sand.png, materials/rock.png   generated textures
+  materials/sand.png, sand_normal.png, rock_<k>.png, rock_normal.png   generated textures
   truth/truth.yaml          ground truth: obstacles, zones, start pose (for test harness/scoring ONLY;
                             never read by the robot stack: "obstacle locations must not be uploaded")
   truth/map.png             top-down picture of the layout, for briefings

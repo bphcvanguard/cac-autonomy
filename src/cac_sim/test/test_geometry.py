@@ -242,6 +242,12 @@ def test_determinism(cfg, schematic):
                           g.build_terrain(cfg, schematic, 0).vertices)
 
 
+def _weld(m):
+    """Faces re-indexed onto unique positions (rock meshes split vertices at sharp edges)."""
+    _, inv = np.unique(np.round(m.vertices, 9), axis=0, return_inverse=True)
+    return inv.ravel()[m.faces]
+
+
 @pytest.mark.parametrize('d,h,seed', [(0.30, 0.12, 0), (0.33, 0.25, 1), (0.40, 0.35, 2),
                                       (0.35, 0.18, 3), (0.31, 0.30, 4)])
 def test_rock(d, h, seed):
@@ -253,14 +259,58 @@ def test_rock(d, h, seed):
     assert abs(v[:, 2].max() - h) <= 0.15 * h
     assert -0.06 <= v[:, 2].min() <= -0.02        # extends a few cm below the base
     assert np.allclose(0.5 * (v[:, :2].max(axis=0) + v[:, :2].min(axis=0)), 0, atol=1e-9)
-    # Closed manifold: every edge shared by exactly 2 faces, consistent winding, outward.
-    _, cnt = _edge_counts(f)
+    # Closed manifold (by position): every edge shared by exactly 2 faces, consistent winding.
+    w = _weld(m)
+    assert (w[:, 0] != w[:, 1]).all() and (w[:, 1] != w[:, 2]).all() and (w[:, 0] != w[:, 2]).all()
+    _, cnt = _edge_counts(w)
     assert (cnt == 2).all()
-    directed = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    directed = np.concatenate([w[:, [0, 1]], w[:, [1, 2]], w[:, [2, 0]]])
     assert len(np.unique(directed, axis=0)) == len(directed)
     vol = np.einsum('ij,ij->i', v[f[:, 0]], np.cross(v[f[:, 1]], v[f[:, 2]])).sum() / 6
     assert vol > 0
     assert m.uvs.shape == (len(v), 2) and m.normals.shape == v.shape
+    assert np.allclose(np.linalg.norm(m.normals, axis=1), 1.0, atol=1e-6)
+
+
+def test_rock_shape_properties():
+    """Budget and bbox over many seeds; faceted (split normals); varied, not one blob reused."""
+    aspects = []
+    for seed in range(60):
+        d, h = 0.30 + 0.10 * (seed % 5) / 4, 0.12 + 0.23 * (seed % 7) / 6
+        m = g.rock_mesh(d, h, seed)
+        v, f = m.vertices, m.faces
+        assert len(f) <= 400
+        ext = v.max(axis=0) - v.min(axis=0)
+        assert abs(max(ext[0], ext[1]) - d) < 1e-9          # footprint == diameter
+        assert abs(v[:, 2].max() - h) < 1e-9                 # top at z = height
+        assert abs(v[:, 2].min() + 0.04) < 1e-9              # default sink
+        assert len(np.unique(_weld(m))) < len(v)             # some sharp edges were split
+        aspects.append(min(ext[0], ext[1]) / max(ext[0], ext[1]))
+    assert min(aspects) < 0.75 and max(aspects) > 0.9      # some elongated, some round
+    # Every UV is finite and the rock is not a sphere: normals are not just the radial direction.
+    m = g.rock_mesh(0.35, 0.25, 7)
+    c = 0.5 * (m.vertices.max(axis=0) + m.vertices.min(axis=0))
+    radial = m.vertices - c
+    radial /= np.linalg.norm(radial, axis=1, keepdims=True)
+    assert np.isfinite(m.uvs).all()
+    assert np.median(np.einsum('ij,ij->i', radial, m.normals)) < 0.97
+    # sink is honoured
+    assert abs(g.rock_mesh(0.35, 0.25, 7, sink=0.03).vertices[:, 2].min() + 0.03) < 1e-9
+
+
+def test_convex_hull():
+    rng = np.random.default_rng(0)
+    p = rng.normal(size=(40, 3))
+    f = g._convex_hull(p)
+    used = np.unique(f)
+    assert len(f) == 2 * len(used) - 4                    # Euler, closed triangulated sphere
+    _, cnt = _edge_counts(f)
+    assert (cnt == 2).all()
+    a = p[f[:, 0]]
+    nrm = np.cross(p[f[:, 1]] - a, p[f[:, 2]] - a)
+    # Every point is on or behind every face plane (outward-facing, convex).
+    side = np.einsum('fk,pfk->pf', nrm, p[:, None, :] - a[None])
+    assert (side <= 1e-9).all()
 
 
 def test_write_obj(tmp_path, cfg, schematic):
@@ -303,23 +353,84 @@ def _decode_png(path):
     return raw[:, 1:].reshape(h, w, 3)
 
 
+def _seamless(img):
+    img = img.astype(float)
+    for ax in (0, 1):
+        seam = np.abs(np.take(img, 0, axis=ax) - np.take(img, -1, axis=ax)).mean()
+        inner = np.abs(np.diff(img, axis=ax)).mean()
+        assert seam < 1.3 * inner
+
+
 def test_textures(tmp_path):
     s = _decode_png(g.sand_texture(tmp_path / 'sand.png', 0, size=256))
     r = _decode_png(g.rock_texture(tmp_path / 'rock.png', 0, size=128))
     assert s.shape == (256, 256, 3) and r.shape == (128, 128, 3)
     mean = s.reshape(-1, 3).mean(axis=0) / 255
-    assert np.allclose(mean, [0.76, 0.69, 0.52], atol=0.04)
+    assert np.allclose(mean, [0.75, 0.68, 0.55], atol=0.02)
+    custom = _decode_png(g.sand_texture(tmp_path / 'c.png', 0, size=128, albedo=(0.6, 0.6, 0.6)))
+    assert np.allclose(custom.reshape(-1, 3).mean(axis=0) / 255, 0.6, atol=0.02)
     assert s.std() > 3 and r.std() > 3
     rm = r.reshape(-1, 3).mean(axis=0) / 255
-    assert 0.3 < rm.mean() < 0.55 and rm[0] >= rm[2]     # grey-brown
-    # Seamless: the wrap-around seam is no rougher than an interior row/column step.
-    for img in (s.astype(float), r.astype(float)):
-        seam = np.abs(img[0] - img[-1]).mean()
-        inner = np.abs(np.diff(img, axis=0)).mean()
-        assert seam < 1.3 * inner
-        seam = np.abs(img[:, 0] - img[:, -1]).mean()
-        inner = np.abs(np.diff(img, axis=1)).mean()
-        assert seam < 1.3 * inner
+    assert 0.5 < rm.mean() < 0.75 and rm[0] > rm[1] > rm[2]     # tan / beige stone
+    _seamless(s)
+    _seamless(r)
     a = g.sand_texture(tmp_path / 'a.png', 5, size=64).read_bytes()
     b = g.sand_texture(tmp_path / 'b.png', 5, size=64).read_bytes()
     assert a == b
+
+
+def test_sand_no_dominant_tile_scale_blotch(tmp_path):
+    """Large-scale (> 10 cm) luminance variation stays faint: a 1 m tile must not repeat."""
+    s = _decode_png(g.sand_texture(tmp_path / 's.png', 3, size=256)).astype(float).mean(axis=2)
+    k = 26                                                  # ~10 cm box blur, periodic
+    lo = s.copy()
+    for ax in (0, 1):
+        lo = sum(np.roll(lo, i, axis=ax) for i in range(k)) / k
+    assert lo.std() / s.mean() < 0.035
+
+
+def test_rock_texture_variants(tmp_path):
+    names = g.rock_texture_variants(tmp_path, 4, n=3, size=64)
+    assert names == ['rock_0.png', 'rock_1.png', 'rock_2.png']
+    imgs = [_decode_png(tmp_path / nm) for nm in names]
+    means = []
+    for im in imgs:
+        assert im.shape == (64, 64, 3) and im.std() > 3
+        _seamless(im)
+        m = im.reshape(-1, 3).mean(axis=0) / 255
+        assert 0.5 < m.mean() < 0.8 and m[0] >= m[2]
+        means.append(m)
+    for i in range(3):                                      # distinct palettes
+        for j in range(i + 1, 3):
+            assert np.abs(means[i] - means[j]).max() > 0.02
+            assert not np.array_equal(imgs[i], imgs[j])
+    again = g.rock_texture_variants(tmp_path / 'again', 4, n=3, size=64)
+    assert (tmp_path / 'again' / again[2]).read_bytes() == (tmp_path / names[2]).read_bytes()
+    assert len(g.rock_texture_variants(tmp_path / 'five', 0, n=5, size=32)) == 5
+
+
+@pytest.mark.parametrize('fn', [g.sand_normal_map, g.rock_normal_map])
+def test_normal_maps(tmp_path, fn):
+    im = _decode_png(fn(tmp_path / 'n.png', 1, size=128)).astype(float) / 255
+    n = im * 2 - 1
+    assert np.allclose(np.linalg.norm(n, axis=2), 1.0, atol=0.02)
+    assert (n[:, :, 2] > 0.3).all()                          # tangent space: mostly +z
+    assert abs(n[:, :, 0].mean()) < 0.02 and abs(n[:, :, 1].mean()) < 0.02
+    assert n[:, :, 0].std() > 0.05
+    _seamless(im * 255)
+
+
+def test_terrain_uv_warp(cfg, schematic):
+    x, y = np.meshgrid(np.linspace(0, 9, 181), np.linspace(0, 5, 101))
+    uv = g.terrain_uv(x.ravel(), y.ravel(), 0)
+    off = uv * g.UV_TILE - np.column_stack([x.ravel(), y.ravel()])
+    assert np.abs(off).max() <= 3 * g.UV_WARP + 1e-12 and np.abs(off).max() > 0.01
+    # fold-free: the Jacobian keeps a positive determinant everywhere
+    u = uv[:, 0].reshape(x.shape)
+    v = uv[:, 1].reshape(x.shape)
+    du_dx, du_dy = np.gradient(u, 0.05, axis=1), np.gradient(u, 0.05, axis=0)
+    dv_dx, dv_dy = np.gradient(v, 0.05, axis=1), np.gradient(v, 0.05, axis=0)
+    det = du_dx * dv_dy - du_dy * dv_dx
+    assert det.min() > 0.5 and det.max() < 1.6
+    m = g.build_terrain(cfg, schematic, 0, res=0.1, fine_res=0.04)
+    assert np.allclose(m.uvs, g.terrain_uv(m.vertices[:, 0], m.vertices[:, 1], 0))

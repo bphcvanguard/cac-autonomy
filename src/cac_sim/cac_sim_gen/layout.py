@@ -150,7 +150,9 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, col):
         r = d / 2
         item = {'diameter': round(d, 3)}
         if kind == 'boulder':
-            item['height'] = round(float(rng.uniform(*spec['height'])), 3)
+            lo, hi = spec['height']
+            hi = min(hi, spec.get('max_height_ratio', 10.0) * d)   # no pillar-shaped rocks
+            item['height'] = round(float(rng.uniform(lo, max(lo, hi))), 3)
         # crater depth and rim are drawn by geometry.crater_params from the crater's own stream
         d = item['diameter']
         r = d / 2

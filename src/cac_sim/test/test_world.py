@@ -22,7 +22,8 @@ def _check(root_dir, layout, extra_models=()):
     names = [m.get('name') for m in models]
     assert len(names) == len(set(names)), 'duplicate model names'
     expected = {'terrain', 'subfloor', 'wall_south', 'wall_north', 'wall_west', 'wall_east',
-                'column'}
+                'column',
+                'hall_south', 'hall_north', 'hall_west', 'hall_east'}
     expected |= {f'rock_{i}' for i in range(len(layout['boulders']))}
     expected |= set(extra_models)
     assert expected == set(names)
@@ -140,3 +141,26 @@ def test_deterministic_across_processes(tmp_path):
     assert files_a == files_b and files_a
     for f in files_a:
         assert filecmp.cmp(a / f, b / f, shallow=False), f'{f} differs between runs'
+
+
+def test_lighting_and_hall_floor(tmp_path):
+    cfg = config.load_config()
+    for low in (False, True):
+        root = world.write_world(cfg, layout_mod.random_layout(cfg, 3), tmp_path / str(low),
+                                 low_gfx=low)
+        w = ET.parse(root / 'arena.sdf').getroot().find('world')
+        casters = [light.get('name') for light in w.findall('light')
+                   if light.findtext('cast_shadows') == 'true']
+        assert casters == ([] if low else ['key'])
+        assert w.findtext('scene/shadows') == ('false' if low else 'true')
+        assert len(w.findall('light')) >= 5
+        L, W = cfg['arena']['size']
+        for m in w.findall('model'):
+            if not m.get('name').startswith('hall_'):
+                continue
+            assert m.find('.//collision') is None
+            x, y, _ = (float(v) for v in m.findtext('pose').split()[:3])
+            sx, sy, _ = (float(v) for v in m.findtext('.//box/size').split())
+            inside_x = x + sx / 2 > -0.3 + 1e-9 and x - sx / 2 < L + 0.3 - 1e-9
+            inside_y = y + sy / 2 > -0.3 + 1e-9 and y - sy / 2 < W + 0.3 - 1e-9
+            assert not (inside_x and inside_y), f'{m.get("name")} within 0.3 m of the arena'
