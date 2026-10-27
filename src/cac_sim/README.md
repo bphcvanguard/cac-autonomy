@@ -3,6 +3,10 @@
 
 Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders, craters, central column, walls) and a seeded randomiser for obstacles and the start pose. Design contract: `DESIGN.md`.
 
+| Robot view from the start zone | Overview | Layout (`truth/map.png`) |
+|---|---|---|
+| ![robot view](docs/arena_robot_view.png) | ![overview](docs/arena_overview.png) | ![map](docs/arena_map.png) |
+
 ## Run a world
 
 `colcon build` generates and installs these worlds: `schematic` (organiser's example layout), `empty`, `seed_0001` to `seed_0005`.
@@ -63,3 +67,20 @@ Everything the rulebook does not give us (wall height, column position and size,
 ## Tests
 
 `colcon test --packages-select cac_sim` (pytest in `test/`).
+
+## What the sensors see (measured in this sim)
+
+Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for why). That makes them
+**much harder to see than boulders**. Measured with a static sensor 0.5 m above the sand:
+
+| Crater | Depth camera (640x480, 87 deg, pitched 20 deg) | 16-beam LiDAR (tilted 15 deg) |
+|---|---|---|
+| 30 cm wide, 3-6 cm deep | seen from 1.0-2.0 m | seen from 1.0 m |
+| 40 cm wide, 4-8 cm deep | seen from 2.0-3.0 m | seen from 1.0 m |
+| 50 cm wide, 5-10 cm deep | seen from 3.0 m | seen from 1.5-2.0 m |
+
+- A 30 cm boulder (12 cm tall) shows up at 3.5 m on the depth camera. The LiDAR loses it at 3.5 m,
+  because it falls between beam rings.
+- The tilled sand is about 4 mm RMS. No flat-sand point fell below -3 cm in any test.
+- These numbers are from the sim, with sim noise. They show the shape of the problem, not the real
+  sensor's performance. Re-measure on real sand.
