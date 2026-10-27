@@ -3,12 +3,13 @@
 #
 # What it stresses: negative-obstacle detection next to a tall obstacle. The ONLY way to the excavation
 # zone is the lane between the central column (0.5 x 0.5 m, 3 m tall, centre (4.5, 2.5)) and a
-# shallow crater (d 0.40 m, depth_ratio 0.12 = 5 cm) at (4.4, 4.2). The lane is y = 2.85 .. 4.0 m,
-# about 1.15 m wide. Three boulders and a deeper crater at x = 3.6 .. 4.5, y = 0.5 .. 1.7 seal the
-# south side, and the crater is 0.6 m from the north wall, so there is no other gap
+# shallow crater (d 0.40 m, depth_ratio 0.12 = 4.8 cm deep) at (4.4, 4.2). The lane is y = 2.75
+# (top of the column) .. 3.92 (outer edge of the crater's rim; the bowl itself starts at y = 4.0),
+# about 1.17 m wide. Three boulders and a deeper crater (d 0.50 m, depth_ratio 0.18 = 9 cm) at
+# x = 3.6 .. 4.5, y = 0.5 .. 1.7 seal the south side, and the crater is 0.6 m from the north wall, so there is no other gap
 # (checked: a round robot of the same width cannot reach x > 5.3 with the lane blocked).
 # Why: the column fills the depth camera's view and returns a huge, clean obstacle, while the crater
-# beside it is a 5 cm dip that only shows at close range (README: 2-3 m on the depth camera). Anything
+# beside it is a 4.8 cm dip that only shows at close range (README: 2-3 m on the depth camera). Anything
 # standing in the column's line of sight, such as the lane's east end seen from the south-west,
 # is hidden until the robot is level with the column, so the crater edge shows up at about 1 m.
 # A planner that trusts only what it has already seen enters the lane and meets the crater rim.
@@ -28,7 +29,7 @@ boulders:
   - {position: [8, 0.8], diameter: 0.35, height: 0.22}
 craters:
   - {position: [4.4, 4.2], diameter: 0.4, depth_ratio: 0.12}
-  - {position: [4.5, 1], diameter: 0.5, depth_ratio: 0.12}
+  - {position: [4.5, 1], diameter: 0.5, depth_ratio: 0.18}
   - {position: [1.2, 3.9], diameter: 0.4, depth_ratio: 0.15}
   - {position: [2.6, 4.4], diameter: 0.4, depth_ratio: 0.2}
   - {position: [7.5, 1.2], diameter: 0.4}

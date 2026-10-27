@@ -143,6 +143,17 @@ def test_busy_dig_is_full_and_haul_is_drivable(cfg):
     assert _reach(cfg, lo, dig, lambda x, y: math.hypot(x - target[0], y - target[1]) < 0.3)
 
 
+def _turn_before_leaving(path, zone):
+    """Largest heading change (deg) before the path leaves the start zone."""
+    start = path[0][2]
+    best = 0.0
+    for x, y, yaw in path:
+        best = max(best, abs((yaw - start + 180.0) % 360.0 - 180.0))
+        if x > zone[2] or y > zone[3]:
+            break
+    return best
+
+
 def test_start_trap_forces_a_turn(cfg):
     lo = load_layout(LAYOUT_DIR / 'start_trap.yaml')
     sp = lo['start_pose']
@@ -153,10 +164,16 @@ def test_start_trap_forces_a_turn(cfg):
     assert len(near) >= 5
     for kind, _, x, y, r in near:      # as close as the rules allow, never closer
         d = L._circle_rect_dist(x, y, z) - r
-        assert sm - 1e-6 <= d <= sm + 0.12
+        assert sm - 1e-6 <= d <= sm + 0.16
     ok, path = L.se2_path_exists(cfg, lo)
     assert ok
-    assert max(abs(w[2]) for w in path) > 45      # the planned route has to turn
+    assert _turn_before_leaving(path, z) >= 67.5   # the route must turn inside the start zone
+    # negative control: without the east column and the south boulders the robot can reverse out
+    # eastwards, and the same check must then fail
+    open_east = dict(lo, boulders=[b for b in lo['boulders']
+                                   if b['position'][1] > 2.0 or b['position'][0] > 5])
+    ok2, path2 = L.se2_path_exists(cfg, open_east)
+    assert ok2 and _turn_before_leaving(path2, z) < 67.5
     # the north gap is the only way out: one more boulder in it shuts the zone
     shut = dict(lo, boulders=lo['boulders'] + [
         {'position': [1.3, 2.3], 'diameter': 0.4, 'height': 0.25}])

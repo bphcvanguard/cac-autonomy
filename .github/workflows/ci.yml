@@ -25,11 +25,15 @@ jobs:
       - name: keep apt downloads
         run: rm -f /etc/apt/apt.conf.d/docker-clean
 
+      - name: month stamp
+        id: date
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+
       - name: apt cache
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-jazzy-${{ hashFiles('src/**/package.xml') }}
+          key: apt-${{ runner.os }}-jazzy-${{ steps.date.outputs.month }}-${{ hashFiles('src/**/package.xml') }}
           restore-keys: apt-${{ runner.os }}-jazzy-
 
       - name: rosdep install

@@ -253,3 +253,20 @@ def test_margins_come_from_config_and_are_enforced(cfg):
         for (_, _, x, y, _r), e in zip(L._items(lay), L._extents(c2, lay)):
             assert L._circle_rect_dist(x, y, z['start']) >= e + 0.3 - 1e-6
             assert L._circle_rect_dist(x, y, z['construction']) >= e + 0.2 - 1e-6
+
+
+def test_cm_rounds_half_up_consistently():
+    assert L._cm(0.825) == 83
+    assert L._cm(0.625) == 63
+    assert L._cm(0.615) == 62
+    assert L._cm(0.0) == 0
+
+
+def test_strict_applies_min_gap_to_marker_posts(cfg):
+    pid, px, py, pr = post_circles(cfg)[0]
+    lo = {'name': 't', 'seed': None, 'craters': [], 'start_pose': {'x': 1, 'y': 1, 'yaw_deg': 0},
+          'boulders': [{'position': [px + 0.05 + pr + 0.2 + 0.0, py + 0.9], 'diameter': 0.4,
+                        'height': 0.2}]}
+    near = dict(lo, boulders=[{'position': [px + 0.3, py], 'diameter': 0.4, 'height': 0.2}])
+    assert any('post of marker' in m for m in L.check_layout(cfg, near, paths=False))
+    assert not any('post of marker' in m for m in L.check_layout(cfg, lo, paths=False))

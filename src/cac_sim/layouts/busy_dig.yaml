@@ -10,7 +10,7 @@
 # digging area. The robot must pick a dig spot that is free of craters (a crater changes the sand
 # depth and the volume of a scoop), then drive loaded with sand, slowly, between boulders and craters
 # to the berm target box.
-# Clear space kept around the dig spot (6.6, 1.4): no obstacle within 0.8 m of its centre, so a
+# Clear space kept around the dig spot (6.6, 1.4): no obstacle centre within 0.84 m and no obstacle edge within 0.67 m of it, so a
 # legal dig spot exists. A round robot (the same width as the rover) can drive from the dig spot
 # to the berm target (tested).
 # A good robot: rejects dig spots near a crater rim, replans the haul route when a crater shows up

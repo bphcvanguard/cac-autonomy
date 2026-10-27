@@ -1,28 +1,31 @@
 # STRESS LAYOUT: start_trap
 # Run: generate_arena --layout start_trap --out /tmp/arenas
 #
-# What it stresses: leaving the start zone. Boulders sit right outside the start zone, as close as the
-# rules allow (0.10 m margin, randomiser.start_zone_margin): a column of three along the east side
-# (x = 2.3) and two along the north side (y = 2.3), leaving ONE exit on the north side, a 1.25 m wide
-# gap at x = 0.65 .. 1.90. The robot starts facing WEST, nose 0.25 m from the wall.
+# What it stresses: leaving the start zone. Boulders sit right outside the start zone, close to the
+# rules' limit (0.10 m margin, randomiser.start_zone_margin): a column of three along the east side
+# (x = 2.3) with a fourth boulder just south of it, and two along the north side (y = 2.3 .. 2.4),
+# leaving ONE exit on the north side. The gap between the two north boulders is x = 0.65 .. 1.90
+# (1.25 m); with the default frame_inner marker post 3 at (0.80, 2.12) inside it, the clear width is
+# x = 0.81 .. 1.90, about 1.09 m (0.34 m wider than the 0.75 m robot, 0.14 m wider than the robot
+# plus 0.10 m clearance on each side). The robot starts facing WEST, nose 0.25 m from the wall.
 # Why: nothing forces judges to leave the start zone open towards the field. A robot that drives
 # forward first hits the wall, and one that heads east meets the boulder column. The only way out
-# needs a turn of 90 degrees or more inside the 2 x 2 m zone, then a drive through a gap only
-# 0.3 m wider than the robot.
-# A good robot: sees the start-zone neighbourhood before moving, turns in place about 90 degrees
-# to face north (a skid-steer or similar), and drives out through the gap without clipping the
-# boulders on either side. No reversing is needed, but reversing is allowed.
+# is the north gap, which needs a turn inside the 2 x 2 m zone (the planned route turns 90 degrees).
+# A good robot: sees the start-zone neighbourhood before moving, then either turns in place to face
+# north and drives out, or turns to face south (the planned route in truth/map.png: yaw 180 to -90
+# deg) and reverses north through the gap, without clipping the boulders or the marker post.
+# Both are valid. Without the east column the route needs only 22.5 degrees (the robot reverses out east).
 # Start pose: (1.0, 1.0), yaw 180 deg = facing west (the wall). Exit is to the north.
 #
-# Strict check: passes with no issues.
+# Strict check: passes with no issues (including the 0.20 m gap to the marker posts).
 name: start_trap
 seed: null
 boulders:
-  - {position: [0.45, 2.3], diameter: 0.4, height: 0.3}
+  - {position: [0.45, 2.4], diameter: 0.4, height: 0.3}
   - {position: [2.1, 2.3], diameter: 0.4, height: 0.3}
   - {position: [2.3, 1.65], diameter: 0.4, height: 0.28}
   - {position: [2.3, 1.05], diameter: 0.4, height: 0.3}
-  - {position: [2.3, 0.45], diameter: 0.4, height: 0.25}
+  - {position: [2.45, 0.45], diameter: 0.4, height: 0.25}
   - {position: [6, 0.8], diameter: 0.35, height: 0.25}
   - {position: [8, 0.8], diameter: 0.35, height: 0.22}
 craters:

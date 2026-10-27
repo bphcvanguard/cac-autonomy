@@ -2,10 +2,10 @@
 # Run: generate_arena --layout crater_field --out /tmp/arenas
 #
 # What it stresses: crater detection, the hardest perception case. Seven SHALLOW craters (depth_ratio
-# 0.10-0.12, so 4-6 cm deep for 40-50 cm wide) are clustered on the travel route
+# 0.10-0.12, so 4.0-5.0 cm deep for 40-50 cm wide) are clustered on the travel route
 # (arena.yaml randomiser.routes.travel: start zone -> (3.2, 1.6) -> excavation zone, x = 2.4 .. 4.3 m),
-# with only four boulders, all kept to the edges of the field (the excavation zone has the rules'
-# minimum of one crater and two boulders, also placed far from the route).
+# with only four boulders, all kept to the edges of the field (the excavation zone holds one crater and two
+# boulders, above the config minimum of one each, also placed far from the route; the rules set none).
 # Why: README 'What the sensors see': craters like these show up on the depth camera only at 2-3 m
 # and on the 16-beam LiDAR only at 1-2 m. A planner that trusts a boulder-only costmap drives
 # straight into the cluster. The craters here are the minimum depth the layout limits allow.

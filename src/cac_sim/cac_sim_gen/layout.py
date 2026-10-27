@@ -640,6 +640,9 @@ def check_layout(cfg, layout, strict=True, paths=True):
             g = math.hypot(x - px, y - py) - r - pr
             if g < -EPS:
                 v.append(f'{_name(kind, i)} overlaps the post of marker {pid} by {-g:.2f} m')
+            elif strict and g < rc['min_gap_between_obstacles'] - EPS:
+                v.append(f'gap {g:.2f} m between {_name(kind, i)} and the post of marker {pid} '
+                         f'< {rc["min_gap_between_obstacles"]} m')
 
     for a in range(len(items)):
         for b in range(a + 1, len(items)):
@@ -1009,7 +1012,7 @@ _COMPASS = ('east', 'north-east', 'north', 'north-west', 'west', 'south-west', '
 
 def _cm(v):
     """Metres -> whole centimetres, rounding half up (never banker's rounding)."""
-    return int(math.floor(v * 100 + 0.5))
+    return int(math.floor(round(v * 100, 6) + 0.5))
 
 
 def _cm1(v):
