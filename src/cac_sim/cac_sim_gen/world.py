@@ -12,13 +12,15 @@ from xml.sax.saxutils import escape
 import numpy as np
 import yaml
 
-from . import geometry, layout as layout_mod
+from . import geometry, layout as layout_mod, markers as markers_mod
+from .markers import (  # noqa: F401 - re-exported: part of the world API
+    board_side, BOARD_TH, check_markers, marker_footprints, marker_placement, POST_R,
+    wall_mounted)
 
 # Visual / collision mesh resolutions in metres (budgets: visual <= 80k tris, collision <= 20k).
 VISUAL_RES = 0.04
 COLLISION_RES = 0.08
 FINE_RES = 0.02
-SINK = 0.01          # rock_mesh already extends 4 cm below its origin; this makes the total ~5 cm
 OVERLAY_Z = 0.02     # above the +/- tilled-sand relief (a z of 0.002 would be buried by it)
 
 WALL_RGB = (0.84, 0.78, 0.64)       # light-beige painted plywood (Artemis Arena walls)
@@ -29,6 +31,12 @@ ROCK_VARIANTS = 3
 HALL_MARGIN = 0.3        # hall floor starts at least this far outside the inner wall faces
 HALL_EXTENT = 30.0       # how far the hall floor reaches beyond the arena
 LIGHT_HEIGHT = 4.5       # overhead lamps above the sand
+# Lights and colours above are named constants here on purpose; geometry, rule limits, friction,
+# rock sink and the situational-camera sensor are in config/arena.yaml.
+
+
+class MarkerError(RuntimeError):
+    """--markers was requested but the marker images cannot be generated."""
 
 
 def _f(*vals):
@@ -164,11 +172,13 @@ def _pipes(cfg):
     return out
 
 
-def _terrain():
+def _terrain(cfg):
+    mu = cfg['terrain']['friction']
     return ('<model name="terrain"><static>true</static><pose>0 0 0 0 0 0</pose><link name="link">'
             '<collision name="collision">'
             f'{_mesh_geom("meshes/terrain_collision.obj")}'
-            '<surface><friction><ode><mu>0.9</mu><mu2>0.9</mu2></ode></friction></surface>'
+            f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode></friction>'
+            '</surface>'
             '</collision>'
             f'<visual name="visual">{_mesh_geom("meshes/terrain.obj")}'
             f'{_tex_material("materials/sand.png", 0.97, "materials/sand_normal.png")}'
@@ -177,7 +187,7 @@ def _terrain():
 
 def _boulder(cfg, layout, i, b, seed, yaw):
     x, y = b['position']
-    z = _surface(cfg, layout, x, y, seed) - SINK
+    z = _surface(cfg, layout, x, y, seed) - cfg['boulders']['sink']
     geom = _mesh_geom(f'meshes/rock_{i}.obj')
     tex = _tex_material(f'materials/rock_{i % ROCK_VARIANTS}.png', 0.9,
                         'materials/rock_normal.png')
@@ -187,16 +197,33 @@ def _boulder(cfg, layout, i, b, seed, yaw):
             f'<visual name="visual">{geom}{tex}</visual></link></model>')
 
 
-def _marker_images(cfg, out_dir):
-    """Write marker_<id>.png (tag + white border). Returns {id: file}, or {} without cv2.aruco."""
+def _aruco(cfg):
+    """Return (cv2, aruco module, dictionary) or raise MarkerError saying exactly what is wrong."""
     try:
         import cv2
         aruco = cv2.aruco
-        dic = aruco.getPredefinedDictionary(getattr(aruco, cfg['markers']['dictionary']))
-    except Exception as e:  # noqa: BLE001 - any import/attr failure means "no aruco here"
-        print(f'warning: cv2.aruco not usable ({e}); skipping --markers')
-        return {}
-    px, border = 200, 50
+    except (ImportError, AttributeError) as e:
+        raise MarkerError(f'cv2.aruco is not available ({e}); install python3-opencv '
+                          '(opencv-contrib)') from e
+    name = cfg['markers']['dictionary']
+    if not hasattr(aruco, name):
+        raise MarkerError(f'unknown ArUco dictionary {name!r} in arena.yaml markers.dictionary')
+    try:
+        dic = aruco.getPredefinedDictionary(getattr(aruco, name))
+    except (TypeError, cv2.error) as e:
+        raise MarkerError(f'{name!r} is not a usable ArUco dictionary ({e})') from e
+    return cv2, aruco, dic
+
+
+def check_marker_support(cfg):
+    """Raise MarkerError unless marker images can be generated for this config."""
+    _aruco(cfg)
+
+
+def _marker_images(cfg, out_dir):
+    """Write marker_<id>.png (tag + white border). Returns {id: file}. Raises MarkerError."""
+    cv2, aruco, dic = _aruco(cfg)
+    px, border = markers_mod.TAG_PX, markers_mod.BORDER_PX
     files = {}
     for m in cfg['markers']['list']:
         if hasattr(aruco, 'generateImageMarker'):
@@ -211,78 +238,9 @@ def _marker_images(cfg, out_dir):
     return files
 
 
-MARKER_MARGIN = 0.01      # clearance between a marker's collision footprint and the start zone
-POST_R = 0.01
-BOARD_TH = 0.01
-
-
-def _board_side(cfg):
-    return cfg['markers']['size'] * (200 + 2 * 50) / 200     # tag + white border
-
-
-def _wall_mounted(cfg, m):
-    x, y, _ = m['position']
-    w, h = cfg['arena']['size']
-    return x < 0.02 or y < 0.02 or x > w - 0.02 or y > h - 0.02
-
-
-def marker_placement(cfg, m):
-    """Return (x, y) of a marker, moved clear of the start zone.
-
-    The board and post footprints (conservative axis-aligned boxes) are moved just far enough to
-    stay outside the start zone interior. Wall-mounted boards are flush with the wall and
-    unchanged (they carry no post).
-    """
-    x, y, _ = m['position']
-    yaw = math.radians(m['yaw_deg'])
-    if _wall_mounted(cfg, m):
-        return x, y
-    side = _board_side(cfg)
-    hx = (abs(math.sin(yaw)) * side + abs(math.cos(yaw)) * BOARD_TH) / 2
-    hy = (abs(math.cos(yaw)) * side + abs(math.sin(yaw)) * BOARD_TH) / 2
-    hx, hy = max(hx, POST_R), max(hy, POST_R)
-    zx0, zy0, zx1, zy1 = cfg['zones']['start']
-    inside_x = x - hx < zx1 and x + hx > zx0
-    inside_y = y - hy < zy1 and y + hy > zy0
-    if inside_x and inside_y:
-        dx = zx1 + MARKER_MARGIN - (x - hx)
-        dy = zy1 + MARKER_MARGIN - (y - hy)
-        if dx <= dy:
-            x += dx
-        else:
-            y += dy
-    return x, y
-
-
-def marker_footprints(cfg):
-    """{id: [(x0, y0, x1, y1), ...]} of every COLLISION shape of each marker (the post only)."""
-    out = {}
-    for m in cfg['markers']['list']:
-        if _wall_mounted(cfg, m):
-            out[m['id']] = []
-            continue
-        x, y = marker_placement(cfg, m)
-        out[m['id']] = [(x - POST_R, y - POST_R, x + POST_R, y + POST_R)]
-    return out
-
-
-def check_markers(cfg):
-    """Rule check: at most 4 markers, every board top below 0.60 m."""
-    v = []
-    lst = cfg['markers']['list']
-    if len(lst) > 4:
-        v.append(f'{len(lst)} markers; the rules allow at most 4')
-    half = _board_side(cfg) / 2
-    for m in lst:
-        top = m['position'][2] + half
-        if top >= 0.60:
-            v.append(f'marker {m["id"]}: board top at {top:.2f} m, must be below 0.60 m')
-    return v
-
-
 def _markers(cfg, files):
     """Boards are visual only; free-standing ones get a thin collision post outside the start."""
-    side = _board_side(cfg)
+    side = board_side(cfg)
     out = []
     for m in cfg['markers']['list']:
         if m['id'] not in files:
@@ -293,7 +251,7 @@ def _markers(cfg, files):
         # nudge along the facing direction so a wall-mounted board does not z-fight with the wall
         px, py = x + 0.006 * math.cos(yaw), y + 0.006 * math.sin(yaw)
         post = ''
-        if not _wall_mounted(cfg, m):
+        if not wall_mounted(cfg, m):
             ph = z - side / 2
             pg = (f'<geometry><cylinder><radius>{POST_R}</radius><length>{ph:.4f}</length>'
                   '</cylinder></geometry>')
@@ -311,6 +269,9 @@ def _markers(cfg, files):
 
 def _sitcams(cfg):
     out = []
+    sc = cfg['situational_camera_sensor']
+    width, height = sc['resolution']
+    near, far = sc['clip']
     for c in cfg['situational_cameras']:
         px, py, pz = c['position']
         lx, ly, lz = c['look_at']
@@ -322,10 +283,13 @@ def _sitcams(cfg):
             f'<model name="{n}"><static>true</static>'
             f'<link name="link">{_pose(px, py, pz, 0, pitch, yaw)}'
             '<sensor name="camera" type="camera"><always_on>true</always_on>'
-            '<update_rate>5</update_rate>'
-            f'<topic>/sitcam/{n}/image</topic><camera><horizontal_fov>1.2</horizontal_fov>'
-            '<image><width>1280</width><height>720</height><format>R8G8B8</format></image>'
-            '<clip><near>0.1</near><far>40</far></clip></camera></sensor></link></model>')
+            f'<update_rate>{_f(sc["rate_hz"])}</update_rate>'
+            f'<topic>/sitcam/{n}/image</topic>'
+            f'<camera><horizontal_fov>{_f(sc["fov"])}</horizontal_fov>'
+            f'<image><width>{width}</width><height>{height}</height>'
+            '<format>R8G8B8</format></image>'
+            f'<clip><near>{_f(near)}</near><far>{_f(far)}</far></clip></camera>'
+            '</sensor></link></model>')
     return out
 
 
@@ -415,11 +379,13 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     (root / 'materials').mkdir(parents=True, exist_ok=True)
     seed = layout.get('seed')
     seed = 0 if seed is None else int(seed)
+    if markers:
+        check_marker_support(cfg)
 
     terrain = geometry.build_terrain(cfg, layout, seed, VISUAL_RES, FINE_RES)
-    geometry.write_obj(root / 'meshes' / 'terrain.obj', terrain)
+    geometry.write_obj(root / 'meshes' / 'terrain.obj', terrain, mtl_name='sand')
     coarse = geometry.build_terrain(cfg, layout, seed, COLLISION_RES, COLLISION_RES)
-    geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse)
+    geometry.write_obj(root / 'meshes' / 'terrain_collision.obj', coarse, mtl_name='sand')
     geometry.sand_texture(root / 'materials' / 'sand.png', seed, 1024,
                           albedo=tuple(cfg['sand']['albedo']))
     geometry.sand_normal_map(root / 'materials' / 'sand_normal.png', seed, 1024)
@@ -427,12 +393,14 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     geometry.rock_normal_map(root / 'materials' / 'rock_normal.png', seed, 512)
 
     yaw_rng = np.random.default_rng([seed, 7])    # own stream: boulder yaw
-    models = [_terrain(), _floor(cfg), *_hall_floor(cfg), *_walls(cfg), *_pipes(cfg), _column(cfg)]
+    models = [_terrain(cfg), _floor(cfg), *_hall_floor(cfg), *_walls(cfg), *_pipes(cfg),
+              _column(cfg)]
     for i, b in enumerate(layout['boulders']):
         geometry.write_obj(root / 'meshes' / f'rock_{i}.obj',
-                           geometry.rock_mesh(b['diameter'], b['height'], seed * 1000 + i))
+                           geometry.rock_mesh(b['diameter'], b['height'], seed, index=i),
+                           mtl_name=f'rock_{i % ROCK_VARIANTS}')
         models.append(_boulder(cfg, layout, i, b, seed, float(yaw_rng.uniform(0, 2 * math.pi))))
-    if markers:
+    if markers:      # raises MarkerError rather than silently writing a world without markers
         models += _markers(cfg, _marker_images(cfg, root / 'materials'))
     if sitcams:
         models += _sitcams(cfg)
@@ -448,6 +416,6 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
     with open(root / 'truth' / 'truth.yaml', 'w') as f:
         f.write('# Ground truth for the test harness / scoring ONLY.\n'
                 '# The robot stack must never read it: obstacle locations may not be uploaded.\n')
-        yaml.safe_dump(layout_mod.truth(cfg, layout), f, sort_keys=False)
-    layout_mod.render_map(cfg, layout, str(root / 'truth' / 'map.png'))
+        yaml.safe_dump(layout_mod.truth(cfg, layout, markers=markers), f, sort_keys=False)
+    layout_mod.render_map(cfg, layout, str(root / 'truth' / 'map.png'), markers=markers)
     return root

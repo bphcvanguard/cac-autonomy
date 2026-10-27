@@ -44,13 +44,16 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--layout` | `schematic`, `empty`, `random` or a layout YAML file |
 | `--seed N`, `--count K` | random layouts for seeds N .. N+K-1 (same seed = same arena) |
 | `--out DIR` | one sub-directory per world; the SDF uses relative paths, so it can be moved |
-| `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`, else skipped with a warning) |
+| `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`; without it, or with a wrong dictionary name, the CLI prints an error to stderr and exits non-zero) |
+| `--config FILE` | `arena.yaml` override (default: the packaged one) |
 | `--marker-preset NAME` | `frame_inner` (start zone's inner edges, default) or `perimeter_walls` (the west and south walls). The rule text allows both readings; see `arena.yaml` |
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
 
-Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m).
+Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m). The posts are real obstacles: the randomiser and all path checks (and the truth paths) always keep room for the configured preset's posts, with or without `--markers`.
+
+CLI messages go to stderr: `warning [name]` = a hard problem (overlap, outside the arena, no path), `info [name]` = a deviation from the rulebook only (the schematic has a few: it is the organiser's drawing). Obstacles keep `randomiser.start_zone_margin` / `construction_zone_margin` (in `arena.yaml`) from those zones.
 
 Lighting imitates the indoor hall of the Artemis Arena: a dim directional key plus four overhead lamps 4.5 m above the sand, a high ambient so shadowed sides are not black, a neutral grey background and a visual-only grey hall floor starting 0.3 m outside the walls (no collision). Only the key casts shadows (one shadow pass, cheap enough for CPU laptops); `--low-gfx` turns even that off. Walls are beige, the column concrete grey. Rocks use three texture variants plus normal maps (sand and rock).
 
@@ -58,11 +61,11 @@ Lighting imitates the indoor hall of the Artemis Arena: a dim directional key pl
 
 `truth/truth.yaml` lists every obstacle, zone and the start pose, and `truth/map.png` draws them. They are for the test harness and scoring **only**. The robot stack must never read them: the rules forbid uploading obstacle locations, and the robot has to find obstacles with its own sensors. The CLI prints a warning to that effect on every run.
 
-The installed worlds (`share/cac_sim/worlds/<name>/`) contain no truth. The truth for the default worlds is installed separately as `share/cac_sim/truth/<name>.yaml` and `<name>.png`.
+The installed worlds (`share/cac_sim/worlds/<name>/`) contain no truth, and truth is not installed anywhere (any node can read `share/`). Truth is generated only with `--out`: the harness generates the arena it tests on and keeps the truth itself.
 
 ## Assumptions
 
-Everything the rulebook does not give us (wall height, column position and size, rock heights, crater depth, marker size, camera positions, and so on) is marked `ASSUMED` in `config/arena.yaml`, with where the guess comes from. The CAC arena text is copied from the NASA Lunabotics guidebook, so the Lunabotics Artemis Arena is the reference for the guesses: a square ~0.5 m column near the centre, low walls ~0.5 m, and an optional PVC duct along the walls (`wall.inner_pipe_diameter`, off by default). Change it there and rebuild; nothing is hard-coded elsewhere. Where the rulebook table and the schematic disagree (berm and target size), the smaller pair is the default.
+Everything the rulebook does not give us (wall height, column position and size, rock heights, crater depth, marker size, camera positions, and so on) is marked `ASSUMED` in `config/arena.yaml`, with where the guess comes from. The CAC arena text is copied from the NASA Lunabotics guidebook, so the Lunabotics Artemis Arena is the reference for the guesses: a square ~0.5 m column near the centre, low walls ~0.5 m, and an optional PVC duct along the walls (`wall.inner_pipe_diameter`, off by default). Geometry, rule limits, randomiser margins, sand friction, rock sink and the situational-camera sensor (fov, resolution, rate, clip) are all in that file; change it there and rebuild. Only the lighting rig (lamp positions and intensities) and the colours of walls, column, floors and hall are named constants at the top of `cac_sim_gen/world.py`. Where the rulebook table and the schematic disagree (berm and target size), the smaller pair is the default.
 
 ## Tests
 

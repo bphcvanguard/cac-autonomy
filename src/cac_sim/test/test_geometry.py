@@ -129,16 +129,15 @@ def test_crater_depth_and_flat_sand(cfg, schematic):
 def test_crater_profile(d, ratio, rim_ratio):
     cap = 38.0
     depth, rim = ratio * d, rim_ratio * d
-    eff = g.effective_crater_depth(d, depth, rim, cap)
-    assert eff <= depth + 1e-12
-    if ratio <= 0.10:
-        assert eff == pytest.approx(depth)        # shallow bowls are never clamped
     prof = g.crater_profile(d, depth, rim, cap)
-    outer = g.crater_outer_radius(d, rim, cap)
+    outer = g.crater_outer_radius(d)
     h = 1e-4
     r = np.arange(0.0, outer + 0.1, h)
     z = prof(r)
-    assert z[0] == pytest.approx(-eff, abs=1e-9)
+    eff = -z[0]                                   # floor depth after the slope cap
+    assert eff <= depth + 1e-12
+    if ratio <= 0.10:
+        assert eff == pytest.approx(depth)        # shallow bowls are never clamped
     crest = r[np.argmax(z)]
     assert d / 2 < crest < 1.1 * d / 2              # rim crest just outside R
     assert np.all(np.abs(z[r >= outer]) < 1e-12)
@@ -255,7 +254,7 @@ def test_rock(d, h, seed):
     v, f = m.vertices, m.faces
     assert len(f) <= 400 and np.isfinite(v).all()
     ext = v.max(axis=0) - v.min(axis=0)
-    assert abs(max(ext[0], ext[1]) - d) <= 0.15 * d
+    assert 0.6 * d <= max(ext[0], ext[1]) <= d + 1e-9
     assert abs(v[:, 2].max() - h) <= 0.15 * h
     assert -0.06 <= v[:, 2].min() <= -0.02        # extends a few cm below the base
     assert np.allclose(0.5 * (v[:, :2].max(axis=0) + v[:, :2].min(axis=0)), 0, atol=1e-9)
@@ -281,7 +280,8 @@ def test_rock_shape_properties():
         v, f = m.vertices, m.faces
         assert len(f) <= 400
         ext = v.max(axis=0) - v.min(axis=0)
-        assert abs(max(ext[0], ext[1]) - d) < 1e-9          # footprint == diameter
+        rad = np.hypot(v[:, 0], v[:, 1]).max()
+        assert abs(rad - 0.5 * d) < 1e-9                     # max radius == D/2
         assert abs(v[:, 2].max() - h) < 1e-9                 # top at z = height
         assert abs(v[:, 2].min() + 0.04) < 1e-9              # default sink
         assert len(np.unique(_weld(m))) < len(v)             # some sharp edges were split
@@ -363,12 +363,14 @@ def _seamless(img):
 
 def test_textures(tmp_path):
     s = _decode_png(g.sand_texture(tmp_path / 'sand.png', 0, size=256))
-    r = _decode_png(g.rock_texture(tmp_path / 'rock.png', 0, size=128))
-    assert s.shape == (256, 256, 3) and r.shape == (128, 128, 3)
+    assert s.shape == (256, 256, 3)
     mean = s.reshape(-1, 3).mean(axis=0) / 255
     assert np.allclose(mean, [0.75, 0.68, 0.55], atol=0.02)
     custom = _decode_png(g.sand_texture(tmp_path / 'c.png', 0, size=128, albedo=(0.6, 0.6, 0.6)))
     assert np.allclose(custom.reshape(-1, 3).mean(axis=0) / 255, 0.6, atol=0.02)
+    rname = g.rock_texture_variants(tmp_path, 0, n=1, size=128)[0]
+    r = _decode_png(tmp_path / rname)
+    assert r.shape == (128, 128, 3)
     assert s.std() > 3 and r.std() > 3
     rm = r.reshape(-1, 3).mean(axis=0) / 255
     assert 0.5 < rm.mean() < 0.75 and rm[0] > rm[1] > rm[2]     # tan / beige stone
@@ -434,3 +436,37 @@ def test_terrain_uv_warp(cfg, schematic):
     assert det.min() > 0.5 and det.max() < 1.6
     m = g.build_terrain(cfg, schematic, 0, res=0.1, fine_res=0.04)
     assert np.allclose(m.uvs, g.terrain_uv(m.vertices[:, 0], m.vertices[:, 1], 0))
+
+
+def test_rock_radius_bound():
+    """No vertex is farther than D/2 from the origin (layout and truth use radius D/2)."""
+    for seed in range(40):
+        for d in (0.30, 0.35, 0.40):
+            for idx in (0, 3):
+                m = g.rock_mesh(d, 0.2, seed, index=idx)
+                rad = np.hypot(m.vertices[:, 0], m.vertices[:, 1]).max()
+                assert 0.9 * d / 2 <= rad <= d / 2 + 1e-6
+                assert len(m.faces) <= 248
+
+
+def test_rock_index_changes_shape():
+    a, b = g.rock_mesh(0.35, 0.2, 5, index=0), g.rock_mesh(0.35, 0.2, 5, index=1)
+    assert a.vertices.shape != b.vertices.shape or not np.array_equal(a.vertices, b.vertices)
+
+
+def test_rng_streams_distinct():
+    """First draws of every stream (geometry + layout [s,2],[s,3] + world [s,7]) all differ."""
+    seen = {}
+    for s in range(21):
+        ids = [('layout_obs', [s, 2]), ('layout_start', [s, 3]), ('world_yaw', [s, 7]),
+               ('till', [s, g.STREAM_TILL]), ('uv', [s, g.STREAM_UV]),
+               ('sand_tex', [s, g.STREAM_SAND_TEX]), ('sand_nrm', [s, g.STREAM_SAND_NRM]),
+               ('rock_nrm', [s, g.STREAM_ROCK_NRM])]
+        ids += [('rim%d' % i, [s, g.STREAM_RIM, i]) for i in range(8)]
+        ids += [('depth%d' % i, [s, g.STREAM_DEPTH, i]) for i in range(8)]
+        ids += [('rock%d' % i, [s, g.STREAM_ROCK, i]) for i in range(40)]
+        ids += [('rtex%d' % k, [s, g.STREAM_ROCK_TEX + k]) for k in range(5)]
+        for name, key in ids:
+            first = tuple(np.random.default_rng(key).random(4))
+            assert first not in seen, (name, s, seen.get(first))
+            seen[first] = (name, s)

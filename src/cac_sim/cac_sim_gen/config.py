@@ -16,7 +16,7 @@ def _find_share(rel):
     try:
         from ament_index_python.packages import get_package_share_directory
         return Path(get_package_share_directory('cac_sim')) / rel
-    except Exception:
+    except (ImportError, LookupError):     # no ament, or cac_sim not installed (a KeyError)
         return p
 
 

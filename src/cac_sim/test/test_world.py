@@ -5,7 +5,8 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-from cac_sim_gen import config, layout as layout_mod, world
+from cac_sim_gen import config, layout as layout_mod, markers as markers_mod, world
+import pytest
 import yaml
 
 PKG = Path(__file__).resolve().parent.parent
@@ -53,6 +54,22 @@ def test_schematic(tmp_path):
     _check(d, lay)
 
 
+needs_aruco = pytest.mark.skipif(not _has_aruco(), reason='cv2.aruco not installed')
+
+
+def test_every_obj_has_a_material(tmp_path):
+    """Each OBJ gets mtllib + a sibling mtl (gz warns 'Missing material' otherwise)."""
+    cfg = config.load_config()
+    d = world.write_world(cfg, config.load_layout('schematic'), tmp_path)
+    objs = list((d / 'meshes').glob('*.obj'))
+    assert len(objs) > 2
+    for o in objs:
+        text = o.read_text()
+        assert f'mtllib {o.stem}.mtl' in text and 'usemtl ' in text, o
+        assert (o.with_suffix('.mtl')).is_file(), o
+
+
+@needs_aruco
 def test_random_with_extras(tmp_path):
     cfg = config.load_config()
     lay = layout_mod.random_layout(cfg, 3)
@@ -60,8 +77,7 @@ def test_random_with_extras(tmp_path):
     d = world.write_world(cfg, lay, tmp_path, markers=True, sitcams=True, overlay=True,
                           low_gfx=True)
     names = ['sitcam_sw', 'sitcam_ne', 'overlay']
-    if _has_aruco():
-        names += [f'marker_{m["id"]}' for m in cfg['markers']['list']]
+    names += [f'marker_{m["id"]}' for m in cfg['markers']['list']]
     _check(d, lay, names)
 
 
@@ -70,13 +86,13 @@ def test_truth_is_fenced_off(tmp_path):
     cfg = config.load_config()
     lay = layout_mod.random_layout(cfg, 4)
     lay['name'] = 'seed_0004'
-    d = world.write_world(cfg, lay, tmp_path, markers=True, overlay=True)
+    d = world.write_world(cfg, lay, tmp_path, markers=_has_aruco(), overlay=True)
     outside = [p for p in d.rglob('*') if p.is_file() and 'truth' not in p.relative_to(d).parts]
     assert outside
     for p in outside:
         assert p.suffix not in ('.yaml', '.yml', '.json'), p
         assert 'map' not in p.name, p
-        if p.suffix not in ('.sdf', '.png', '.obj'):
+        if p.suffix not in ('.sdf', '.png', '.obj', '.mtl'):
             raise AssertionError(f'unexpected file {p}')
     # installed share/, when available: worlds/ holds no truth, truth/ holds it
     try:
@@ -95,6 +111,7 @@ def test_cli_truth_warning(tmp_path):
     r = subprocess.run([sys.executable, str(SCRIPT), '--layout', 'empty', '--out', str(tmp_path)],
                        capture_output=True, text=True, check=True)
     assert 'robot stack must never read it' in r.stdout
+    assert 'info [empty]:' in r.stderr           # strict deviations are visible, not silent
     assert (tmp_path / 'empty' / 'truth' / 'truth.yaml').is_file()
 
 
@@ -164,3 +181,60 @@ def test_lighting_and_hall_floor(tmp_path):
             inside_x = x + sx / 2 > -0.3 + 1e-9 and x - sx / 2 < L + 0.3 - 1e-9
             inside_y = y + sy / 2 > -0.3 + 1e-9 and y - sy / 2 < W + 0.3 - 1e-9
             assert not (inside_x and inside_y), f'{m.get("name")} within 0.3 m of the arena'
+
+
+def test_marker_geometry_lives_in_markers_module():
+    cfg = config.load_config()
+    assert world.marker_footprints(cfg) == markers_mod.marker_footprints(cfg)
+    assert markers_mod.post_circles(cfg)
+
+
+def _run(*args):
+    return subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True)
+
+
+def test_cli_markers_unavailable_is_an_error(tmp_path):
+    """Asking for --markers without usable aruco: stderr message, non-zero exit, no world."""
+    bad = tmp_path / 'bad.yaml'
+    cfg = yaml.safe_load(config.DEFAULT_CONFIG.read_text())
+    cfg['markers']['dictionary'] = 'DICT_NOPE_99'
+    bad.write_text(yaml.safe_dump(cfg))
+    r = _run('--layout', 'empty', '--out', str(tmp_path / 'o'), '--markers', '--config', str(bad))
+    if _has_aruco():
+        assert r.returncode != 0 and r.stdout == ''
+        assert 'unknown ArUco dictionary' in r.stderr and 'DICT_NOPE_99' in r.stderr
+        assert 'not available' not in r.stderr
+    else:
+        assert r.returncode != 0 and 'cv2.aruco is not available' in r.stderr
+    assert not (tmp_path / 'o' / 'empty').exists()
+
+
+def test_marker_error_kinds(monkeypatch):
+    """An ImportError and a bad dictionary name give different messages."""
+    cfg = config.load_config()
+    monkeypatch.setitem(sys.modules, 'cv2', None)            # import cv2 -> ImportError
+    with pytest.raises(world.MarkerError, match='not available'):
+        world.check_marker_support(cfg)
+    monkeypatch.undo()
+    if _has_aruco():
+        bad = {**cfg, 'markers': {**cfg['markers'], 'dictionary': 'DICT_NOPE'}}
+        with pytest.raises(world.MarkerError, match='unknown ArUco dictionary'):
+            world.check_marker_support(bad)
+
+
+@needs_aruco
+def test_write_world_markers_raises_not_silent(tmp_path):
+    cfg = config.load_config()
+    bad = {**cfg, 'markers': {**cfg['markers'], 'dictionary': 'DICT_NOPE'}}
+    with pytest.raises(world.MarkerError):
+        world.write_world(bad, config.empty_layout(bad), tmp_path, markers=True)
+
+
+def test_posts_reserved_without_markers_flag(tmp_path):
+    """A world generated WITHOUT --markers still has path-checked, post-aware truth."""
+    cfg = config.load_config()
+    lay = layout_mod.random_layout(cfg, 13)
+    d = world.write_world(cfg, lay, tmp_path)
+    t = yaml.safe_load((d / 'truth' / 'truth.yaml').read_text())
+    assert t['paths_include_marker_posts'] and t['marker_posts'] == []
+    assert t['se2_path_exists']

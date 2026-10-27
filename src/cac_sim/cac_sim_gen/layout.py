@@ -2,14 +2,15 @@
 
 A layout is a plain dict (see DESIGN.md). Everything here is deterministic for a given seed.
 RNG streams: obstacles = default_rng([seed, 2]), start pose = default_rng([seed, 3]).
+Marker posts (markers.post_circles) are obstacles in every path check, with or without --markers.
 """
 import heapq
 import math
 
 import numpy as np
 
-from .geometry import crater_params
-from .png import write_png
+from .geometry import crater_params, write_png
+from .markers import post_circles
 
 OBSTACLE_STREAM = 2
 START_STREAM = 3
@@ -75,6 +76,16 @@ def _column(cfg):
     return col['centre'][0], col['centre'][1], col['radius']
 
 
+def _posts(cfg):
+    """Marker collision posts of the configured preset as circles (x, y, r)."""
+    return [(x, y, r) for _, x, y, r in post_circles(cfg)]
+
+
+def _circles(cfg, layout):
+    """Every fixed obstacle for path checks: items, column, marker posts, as (x, y, r)."""
+    return [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)] + _posts(cfg)
+
+
 def _zone_of(cfg, x, y):
     z = cfg['zones']
     if _in_rect(x, y, z['construction']):
@@ -133,11 +144,12 @@ def random_start_pose(cfg, rng):
 
 # ----------------------------------------------------------------------------- randomiser
 
-def _sample_obstacle(cfg, rng, kind, zone, placed, col):
+def _sample_obstacle(cfg, rng, kind, zone, placed, fixed):
     """Draw one obstacle in `zone` ('obstacle'|'excavation'|'construction') that clears all.
 
-    Items lie fully inside their zone (crater rim included), clear the start zone by 0.1 m and
-    the other items by min_gap_between_obstacles.
+    Items lie fully inside their zone (crater rim included), clear the start zone by
+    start_zone_margin, the construction zone by construction_zone_margin, and the other items,
+    the column and the marker posts (`fixed`) by min_gap_between_obstacles.
     """
     rc = cfg['randomiser']
     gap, off = rc['min_gap_between_obstacles'], rc['keep_off_walls']
@@ -176,12 +188,13 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, col):
         if xhi <= xlo or yhi <= ylo:
             continue
         x, y = float(rng.uniform(xlo, xhi)), float(rng.uniform(ylo, yhi))
-        if _circle_rect_dist(x, y, z['start']) < ext + 0.1:
+        if _circle_rect_dist(x, y, z['start']) < ext + rc['start_zone_margin']:
             continue
-        if zone != 'construction' and _circle_rect_dist(x, y, z['construction']) < ext + 0.05:
+        cm = rc['construction_zone_margin']
+        if zone != 'construction' and _circle_rect_dist(x, y, z['construction']) < ext + cm:
             continue
         ok = True
-        for (px, py, pr) in placed + [col]:
+        for (px, py, pr) in placed + fixed:
             if math.hypot(x - px, y - py) - r - pr < gap + slack:
                 ok = False
                 break
@@ -212,10 +225,10 @@ def _one_attempt(cfg, rng):
         seq = ['boulder'] * n[('boulder', zone)] + ['crater'] * n[('crater', zone)]
         order = rng.permutation(len(seq))
         jobs += [(seq[i], zone) for i in order]
-    col = _column(cfg)
+    fixed = [_column(cfg)] + _posts(cfg)
     placed, boulders, craters = [], [], []
     for kind, zone in jobs:
-        item = _sample_obstacle(cfg, rng, kind, zone, placed, col)
+        item = _sample_obstacle(cfg, rng, kind, zone, placed, fixed)
         if item is None:
             return None
         placed.append((item['position'][0], item['position'][1], item['diameter'] / 2))
@@ -280,7 +293,7 @@ def _blocked_grid(cfg, layout, inflate, res):
     ys = (np.arange(ny) + 0.5) * res
     gx, gy = np.meshgrid(xs, ys, indexing='ij')           # (nx, ny)
     blocked = (gx < inflate) | (gx > w - inflate) | (gy < inflate) | (gy > h - inflate)
-    circles = [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)]
+    circles = _circles(cfg, layout)
     for x, y, r in circles:
         blocked |= (gx - x) ** 2 + (gy - y) ** 2 < (r + inflate) ** 2
     return blocked, xs, ys
@@ -414,7 +427,7 @@ def _se2_blocked(cfg, layout, yaw_bins, res):
     fx = (np.arange(fnx) + 0.5) * fs
     fy = (np.arange(fny) + 0.5) * fs
     reach = math.hypot(a, b)
-    circles = [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)]
+    circles = _circles(cfg, layout)
     half = yaw_bins // 2
     out = np.zeros((yaw_bins, fnx, fny), bool)
     for k in range(half):                       # a rectangle is symmetric under 180 deg
@@ -549,7 +562,7 @@ def _straight_corridor(cfg, layout):
     width = rc['robot_footprint'][1]
     half = width / 2 + rc['clearance']
     z = cfg['zones']
-    circles = [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)]
+    circles = _circles(cfg, layout)
     x_to = z['excavation'][0]
     for y0 in np.arange(width / 2, z['start'][3] - width / 2 + 1e-9, 0.025):
         if not any(cx - r < x_to and abs(cy - y0) < half + r for cx, cy, r in circles):
@@ -598,6 +611,10 @@ def check_layout(cfg, layout, strict=True, paths=True):
         g = math.hypot(x - col[0], y - col[1]) - r - col[2]
         if g < -EPS:
             v.append(f'{_name(kind, i)} overlaps the column by {-g:.2f} m')
+        for pid, px, py, pr in post_circles(cfg):
+            g = math.hypot(x - px, y - py) - r - pr
+            if g < -EPS:
+                v.append(f'{_name(kind, i)} overlaps the post of marker {pid} by {-g:.2f} m')
 
     for a in range(len(items)):
         for b in range(a + 1, len(items)):
@@ -622,10 +639,14 @@ def check_layout(cfg, layout, strict=True, paths=True):
                 v.append(f'{_name(kind, i)} is {dw:.2f} m from a wall '
                          f'(< {rc["keep_off_walls"]} m)')
             zone = _zone_of(cfg, x, y)
-            if _circle_rect_dist(x, y, z['start']) < e - EPS:
-                v.append(f'{_name(kind, i)} intrudes into the start zone')
-            if zone != 'construction' and _circle_rect_dist(x, y, z['construction']) < e - EPS:
-                v.append(f'{_name(kind, i)} intrudes into the construction zone')
+            sm, cm = rc['start_zone_margin'], rc['construction_zone_margin']
+            if _circle_rect_dist(x, y, z['start']) < e + sm - EPS:
+                v.append(f'{_name(kind, i)} is closer than {sm} m to the start zone '
+                         f'(extent incl. rim {e:.2f} m)')
+            if zone != 'construction' \
+                    and _circle_rect_dist(x, y, z['construction']) < e + cm - EPS:
+                v.append(f'{_name(kind, i)} is closer than {cm} m to the construction zone '
+                         f'(extent incl. rim {e:.2f} m)')
             if zone == 'obstacle' and x + e > ex0 + EPS:
                 v.append(f'{_name(kind, i)} straddles the obstacle/excavation boundary '
                          f'(extent incl. rim reaches x = {x + e:.2f})')
@@ -688,7 +709,9 @@ def check_layout(cfg, layout, strict=True, paths=True):
                 v.append('start footprint not inside the start zone' +
                          (f' shrunk by {m} m' if strict else ''))
                 break
-        for kind, i, x, y, r in items + [('column', 0, col[0], col[1], col[2])]:
+        fixed = [('column', 0, col[0], col[1], col[2])]
+        fixed += [('marker post', pid, x, y, r) for pid, x, y, r in post_circles(cfg)]
+        for kind, i, x, y, r in items + fixed:
             if _box_hits_circle(cfg, sp, x, y, r):
                 v.append(f'start footprint overlaps {_name(kind, i)}')
 
@@ -704,8 +727,12 @@ def _range(v, label, value, rng_):
 
 # ----------------------------------------------------------------------------- truth
 
-def truth(cfg, layout):
-    """Ground truth for the test harness and scoring. Plain python types only."""
+def truth(cfg, layout, markers=False):
+    """Ground truth for the test harness and scoring. Plain python types only.
+
+    Path fields always treat the configured marker posts as obstacles. `markers=True` (the world
+    was generated with --markers) also lists them under `marker_posts`.
+    """
     z = cfg['zones']
     obstacles = []
     for b in layout.get('boulders', []):
@@ -742,6 +769,9 @@ def truth(cfg, layout):
                    'yaw_deg': float(col.get('yaw_deg', 0.0)),
                    'bounding_radius': float(col['radius']), 'height': float(col['height'])},
         'obstacles': obstacles,
+        'marker_posts': [{'id': int(pid), 'position': [float(x), float(y)], 'radius': float(r)}
+                         for pid, x, y, r in post_circles(cfg)] if markers else [],
+        'paths_include_marker_posts': True,
         'obstacles_in_construction_zone': int(n_con),
         'start_pose': {'x': float(sp['x']), 'y': float(sp['y']), 'yaw_deg': float(sp['yaw_deg'])},
         'path_exists': res,
@@ -821,7 +851,7 @@ class _Canvas:
             x_px += 4 * k
 
 
-def render_map(cfg, layout, png_path, path=None, scale=100):
+def render_map(cfg, layout, png_path, path=None, scale=100, markers=False):
     """Top-down PNG of the layout. North (y = +5) at the top, x to the right."""
     margin = 34
     cv = _Canvas(cfg, scale, margin)
@@ -857,6 +887,9 @@ def render_map(cfg, layout, png_path, path=None, scale=100):
         r = b['diameter'] / 2
         cv.disc(b['position'][0], b['position'][1], r, (60, 60, 60))
         cv.disc(b['position'][0], b['position'][1], r - 0.02, (140, 140, 145))
+    if markers:
+        for _, px, py, pr in post_circles(cfg):
+            cv.disc(px, py, max(pr, 0.03), (150, 30, 150))
     col = cfg['column']
     cx, cy, cr = _column(cfg)
     if col.get('shape', 'cylinder') == 'box':

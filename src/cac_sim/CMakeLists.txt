@@ -10,12 +10,13 @@ install(DIRECTORY config layouts DESTINATION share/${PROJECT_NAME})
 install(PROGRAMS scripts/generate_arena DESTINATION lib/${PROJECT_NAME})
 
 # Generate the default worlds at build time and install them to share/cac_sim/worlds/:
-# schematic, empty, seed_0001 .. seed_0005. Re-runs when the config, layouts, python or script change.
+# schematic, empty, seed_0001 .. seed_<_n_random>. Re-runs when the config, layouts, python or script change.
 # All URIs in the SDF are relative, so the installed directories are relocatable.
 file(GLOB_RECURSE _gen_deps CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/config/*.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/layouts/*.yaml
   ${CMAKE_CURRENT_SOURCE_DIR}/cac_sim_gen/*.py)
+set(_n_random 5)     # the ONLY place that says how many random worlds ship
 set(_worlds_dir ${CMAKE_CURRENT_BINARY_DIR}/worlds)
 set(_worlds_stamp ${CMAKE_CURRENT_BINARY_DIR}/worlds.stamp)
 set(_gen ${CMAKE_COMMAND} -E env PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
@@ -25,21 +26,16 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E remove_directory ${_worlds_dir}
   COMMAND ${_gen} --layout schematic --out ${_worlds_dir}
   COMMAND ${_gen} --layout empty --out ${_worlds_dir}
-  COMMAND ${_gen} --layout random --seed 1 --count 5 --out ${_worlds_dir}
+  COMMAND ${_gen} --layout random --seed 1 --count ${_n_random} --out ${_worlds_dir}
   COMMAND ${CMAKE_COMMAND} -E touch ${_worlds_stamp}
   DEPENDS ${_gen_deps} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_arena
   COMMENT "cac_sim: generating default arena worlds"
   VERBATIM)
 add_custom_target(cac_sim_worlds ALL DEPENDS ${_worlds_stamp})
-# Ground truth (truth.yaml, map.png) must NOT sit next to the world: it goes to share/cac_sim/truth/.
+# Ground truth (truth.yaml, map.png) is NOT installed anywhere: any node can read share/. The test
+# harness generates the arena it tests on (generate_arena --out) and keeps the truth itself.
 install(DIRECTORY ${_worlds_dir}/ DESTINATION share/${PROJECT_NAME}/worlds
   PATTERN "truth" EXCLUDE)
-foreach(_n schematic empty seed_0001 seed_0002 seed_0003 seed_0004 seed_0005)
-  install(FILES ${_worlds_dir}/${_n}/truth/truth.yaml
-    DESTINATION share/${PROJECT_NAME}/truth RENAME ${_n}.yaml)
-  install(FILES ${_worlds_dir}/${_n}/truth/map.png
-    DESTINATION share/${PROJECT_NAME}/truth RENAME ${_n}.png)
-endforeach()
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)

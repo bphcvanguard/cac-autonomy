@@ -7,7 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cac_sim_gen import layout as L  # noqa: E402, I100
 from cac_sim_gen.config import load_config, load_layout  # noqa: E402
-from cac_sim_gen.png import write_png  # noqa: E402
+from cac_sim_gen.geometry import write_png  # noqa: E402
+from cac_sim_gen.markers import post_circles  # noqa: E402
 import numpy as np  # noqa: E402, I100, I201
 import pytest  # noqa: E402, I201
 
@@ -176,3 +177,76 @@ def test_yaw_range(cfg):
     for _ in range(100):
         p = L.random_start_pose(cfg, rng)
         assert -180 <= p['yaw_deg'] < 180 and math.isfinite(p['x'])
+
+
+def test_posts_exist_in_default_config(cfg):
+    posts = post_circles(cfg)
+    assert posts and all(0 < r <= 0.02 for *_, r in posts)
+
+
+def test_posts_are_obstacles_in_every_path_check(cfg, layouts):
+    """No seed's truth path (disc or SE(2)) touches a marker post, with or without --markers."""
+    posts = [(x, y, r) for _, x, y, r in post_circles(cfg)]
+    inflate = L._default_inflate(cfg)
+    for lo in layouts[:60]:
+        t = L.truth(cfg, lo)
+        pts = t['path_exists']['path']
+        for a, b in zip(pts[:-1], pts[1:]):
+            for k in range(21):
+                x, y = a[0] + (b[0] - a[0]) * k / 20, a[1] + (b[1] - a[1]) * k / 20
+                for px, py, pr in posts:
+                    assert math.hypot(x - px, y - py) >= pr + inflate - 0.05, lo['name']
+        for x, y, yaw in t['se2_path']:
+            for px, py, pr in posts:
+                assert not L._box_hits_circle(cfg, {'x': x, 'y': y, 'yaw_deg': yaw}, px, py, pr), \
+                    lo['name']
+
+
+def test_post_blocks_path_check(cfg):
+    """A layout whose only gap is plugged by a post has no path; truth lists posts if asked."""
+    import copy
+    c2 = copy.deepcopy(cfg)
+    ex = c2['zones']['excavation'][0]
+    c2['markers']['list'] = [{'id': y, 'position': [ex - 0.5, y / 10, 0.35], 'yaw_deg': 0}
+                             for y in range(0, 51, 2)]
+    lo = {'name': 'x', 'seed': None, 'boulders': [], 'craters': [],
+          'start_pose': {'x': 1.0, 'y': 1.0, 'yaw_deg': 0.0}}
+    assert not L.path_exists(c2, lo)[0]
+    assert any('no path' in v for v in L.check_layout(c2, lo, strict=False))
+    assert L.path_exists(cfg, lo)[0]
+    assert L.truth(cfg, lo)['marker_posts'] == []
+    assert len(L.truth(cfg, lo, markers=True)['marker_posts']) == len(post_circles(cfg))
+    assert L.truth(cfg, lo)['paths_include_marker_posts']
+
+
+def test_obstacle_overlapping_post_is_hard_error(cfg):
+    _, px, py, _ = post_circles(cfg)[0]
+    lo = {'name': 'x', 'seed': None, 'craters': [],
+          'boulders': [{'position': [px, py], 'diameter': 0.3, 'height': 0.2}],
+          'start_pose': {'x': 1.0, 'y': 1.0, 'yaw_deg': 0.0}}
+    assert any('post of marker' in v for v in L.check_layout(cfg, lo, strict=False, paths=False))
+
+
+def test_margins_come_from_config_and_are_enforced(cfg):
+    import copy
+    rc = cfg['randomiser']
+    assert rc['start_zone_margin'] == 0.10 and rc['construction_zone_margin'] == 0.05
+    sx = cfg['zones']['start'][2]
+    lo = {'name': 'x', 'seed': None, 'craters': [],
+          'start_pose': {'x': 1.0, 'y': 1.0, 'yaw_deg': 0},
+          'boulders': [{'position': [sx + 0.15 + 0.04, 1.0], 'diameter': 0.3, 'height': 0.2}]}
+    msgs = L.check_layout(cfg, lo, strict=True, paths=False)
+    assert any('closer than 0.1 m to the start zone' in m for m in msgs)
+    lo['boulders'][0]['position'][0] += 0.07            # 0.11 m clear: passes the start margin
+    assert not any('start zone' in m for m in L.check_layout(cfg, lo, strict=True, paths=False))
+    c2 = copy.deepcopy(cfg)
+    c2['randomiser']['start_zone_margin'] = 0.3         # the knob is honoured by the checker
+    assert any('start zone' in m for m in L.check_layout(c2, lo, strict=True, paths=False))
+    # and by the randomiser: every seed keeps its extent + margin from both zones
+    z = c2['zones']
+    c2['randomiser']['construction_zone_margin'] = 0.2
+    for s in range(15):
+        lay = L.random_layout(c2, s)
+        for (_, _, x, y, _r), e in zip(L._items(lay), L._extents(c2, lay)):
+            assert L._circle_rect_dist(x, y, z['start']) >= e + 0.3 - 1e-6
+            assert L._circle_rect_dist(x, y, z['construction']) >= e + 0.2 - 1e-6

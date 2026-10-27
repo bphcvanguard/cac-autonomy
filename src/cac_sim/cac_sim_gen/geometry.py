@@ -12,16 +12,17 @@ import numpy as np
 
 from .mesh import Mesh
 
-# RNG stream ids owned by this module.
-STREAM_TILL = 1      # tilled-sand relief
-STREAM_RIM = 2       # crater rim height ratios (per crater index)
-STREAM_ROCK = 3      # rock shape
-STREAM_SAND_TEX = 4
-STREAM_ROCK_TEX = 5
-STREAM_DEPTH = 6     # crater depth ratios (per crater index)
-STREAM_SAND_NRM = 11
-STREAM_ROCK_NRM = 12
-STREAM_UV = 13       # terrain UV warp (anti-tiling)
+# RNG stream ids owned by this module. layout.py uses [seed, 2] and [seed, 3] and world.py
+# [seed, 7]; numpy SeedSequence treats [s, 2] and [s, 2, 0] alike, so every id here is >= 20.
+STREAM_TILL = 20     # tilled-sand relief
+STREAM_RIM = 21      # crater rim height ratios: [seed, 21, crater index]
+STREAM_DEPTH = 22    # crater depth ratios: [seed, 22, crater index]
+STREAM_UV = 23       # terrain UV warp (anti-tiling)
+STREAM_SAND_TEX = 24
+STREAM_SAND_NRM = 25
+STREAM_ROCK_NRM = 26
+STREAM_ROCK = 30     # rock shape: [seed, 30, rock index]
+STREAM_ROCK_TEX = 50  # rock texture variant k: [seed, 50 + k]
 
 UV_TILE = 1.0        # metres of terrain per texture repeat
 
@@ -107,23 +108,11 @@ def _shape(diameter, depth, rim, max_slope_deg):
     return R, rc, wo, d, h, math.degrees(math.atan(steep))
 
 
-def effective_crater_depth(diameter, depth, rim=0.0, max_slope_deg=DEFAULT_MAX_SLOPE_DEG,
-                           sand_depth=None):
-    """Floor depth below undisturbed sand after the slope cap (and the sand-depth cap, if given).
-
-    Equals `depth` unless 1.5 * (depth + rim) / (1.05 * D/2) > tan(max_slope_deg), in which case
-    depth and rim are scaled down together (see _shape).
-    """
-    d = _shape(diameter, depth, rim, max_slope_deg)[3]
-    return min(d, float(sand_depth)) if sand_depth is not None else d
-
-
-def crater_outer_radius(diameter, rim=None, max_slope_deg=None):
+def crater_outer_radius(diameter):
     """Radius beyond which the terrain is exactly the undisturbed tilled surface: 1.40 * D/2.
 
     The rim crest is at 1.05 * D/2 and its outer flank reaches z = 0 at 1.40 * D/2; the tilled
-    relief blends back in over D/2 .. 1.40 * D/2. Independent of rim height and slope (the
-    arguments are accepted for API compatibility).
+    relief blends back in over D/2 .. 1.40 * D/2. Independent of rim height and slope.
     """
     return (RIM_CREST + RIM_OUTER) * 0.5 * float(diameter)
 
@@ -152,10 +141,10 @@ def crater_params(cfg, layout, i, seed):
     """Resolve crater `i` of `layout` to the exact numbers the terrain is built from.
 
     Returns dict(position, diameter, depth (requested), depth_eff, rim, max_slope_deg_eff,
-    wall_deg (= max_slope_deg_eff, kept for older callers), outer_radius).
+    outer_radius).
     Requested depth: layout 'depth' (m) if given, else layout 'depth_ratio' * D, else a ratio drawn
-    uniformly in craters.depth_ratio from stream [seed, 6, i]. Rim: layout 'rim' (m) if given,
-    else craters.rim_ratio * D drawn from stream [seed, 2, i]. `rim` in the result is the rim
+    uniformly in craters.depth_ratio from stream [seed, 22, i]. Rim: layout 'rim' (m) if given,
+    else craters.rim_ratio * D drawn from stream [seed, 21, i]. `rim` in the result is the rim
     height actually built (after the slope cap). Use this in layout checks, world building and
     truth so every module sees the same crater.
     """
@@ -181,7 +170,7 @@ def crater_params(cfg, layout, i, seed):
         'position': [float(c['position'][0]), float(c['position'][1])],
         'diameter': diameter, 'depth': depth,
         'depth_eff': min(d, float(cfg['arena']['sand_depth'])),
-        'rim': h, 'max_slope_deg_eff': steep, 'wall_deg': steep,
+        'rim': h, 'max_slope_deg_eff': steep,
         'outer_radius': crater_outer_radius(diameter),
     }
 
@@ -465,18 +454,22 @@ ROCK_CREASE_DEG = 36.0
 ROCK_ROUND = 0.25      # Laplacian smoothing weight (0 = sharp hull, 1 = blob)
 
 
-def rock_mesh(diameter, height, seed, sink=0.04):
+def rock_mesh(diameter, height, seed, sink=0.04, index=0):
     """Irregular, angular closed boulder: origin at base centre, top at z = height.
 
-    Footprint (max horizontal extent) = diameter. The underside extends `sink` metres below
+    Footprint: every vertex lies within D/2 of the origin and the farthest is exactly D/2.
+    Shape stream is [seed, 30, index] (index = rock number within the world).
+    The underside extends `sink` metres below
     z = 0 so a rock placed a few cm into the sand shows no gap. Shape: convex hull of 18-33
     jittered points on a random ellipsoid (elongation, flat base, blunt top, taper, sometimes a
     fracture face), split once 1-to-4, one light Laplacian pass (weathered edges), then
     low-frequency radial noise and 1-3 shallow dents so the facets are not CAD-flat. Edges sharper
     than ROCK_CREASE_DEG keep split normals (auto-smooth): it shades as angular stone, not a
-    blob. <= 256 triangles; UVs are a planar projection (seamless texture, ROCK_UV_SCALE m/tile).
+    blob. Triangle count is bounded by the hull (<= 33 points -> <= 62 faces) times the 1-to-4
+    split, i.e. <= 248 (measured in tests); UVs are a planar projection (seamless texture,
+    ROCK_UV_SCALE m/tile).
     """
-    rng = np.random.default_rng([_seed(seed), STREAM_ROCK])
+    rng = np.random.default_rng([_seed(seed), STREAM_ROCK, int(index)])
     n = int(rng.integers(18, 34))
     d = rng.normal(size=(n, 3))
     d /= np.linalg.norm(d, axis=1, keepdims=True)
@@ -536,7 +529,7 @@ def rock_mesh(diameter, height, seed, sink=0.04):
     z = np.where(v[:, 2] >= zg, (v[:, 2] - zg) / (zmax - zg) * height,
                  (v[:, 2] - zg) / (zg - zmin) * sink)
     xy = v[:, :2] - 0.5 * (v[:, :2].max(axis=0) + v[:, :2].min(axis=0))
-    xy *= diameter / (xy.max(axis=0) - xy.min(axis=0)).max()
+    xy *= 0.5 * diameter / np.hypot(xy[:, 0], xy[:, 1]).max()
     v = np.column_stack([xy, z])
     v, f, nrm, _src = _split_normals(v, f, ROCK_CREASE_DEG)
     # Planar projection along a tilted axis: continuous across split vertices (no seams).
@@ -718,12 +711,6 @@ def _rock_albedo(rng, size, palette):
     return np.clip(img * lum[:, :, None], 0.0, 1.0)
 
 
-def rock_texture(path, seed, size=512):
-    """Seamless tan sandstone albedo (grain, speckle, stains, faint bedding, darker crevices)."""
-    rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX])
-    return write_png(path, _rock_albedo(rng, size, ROCK_PALETTES[0]))
-
-
 def rock_texture_variants(out_dir, seed, n=3, size=512):
     """Write rock_0.png .. rock_{n-1}.png (different stone palettes and grain) into out_dir.
 
@@ -732,7 +719,7 @@ def rock_texture_variants(out_dir, seed, n=3, size=512):
     out_dir = Path(out_dir)
     names = []
     for k in range(int(n)):
-        rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX, k])
+        rng = np.random.default_rng([_seed(seed), STREAM_ROCK_TEX + k])
         name = 'rock_%d.png' % k
         write_png(out_dir / name, _rock_albedo(rng, size, ROCK_PALETTES[k % len(ROCK_PALETTES)]))
         names.append(name)

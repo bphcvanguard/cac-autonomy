@@ -2,6 +2,7 @@
 # Frame `arena`: origin (0,0,0 deg) = bottom-left corner of the start zone = arena corner.
 # x along the 9 m side (west -> east), y along the 5 m side (south -> north), z up, z = 0 = sand surface.
 # Sources: rulebook "ARENA: Specifications" + schematic (docs/source in the planning repo).
+# Lights and colours are named constants at the top of world.py; everything else is here.
 # Every value marked ASSUMED is not in the rulebook. Confirm at the Pre-Task Briefing and update here.
 # Rectangles are [x_min, y_min, x_max, y_max] in metres.
 
@@ -49,6 +50,9 @@ boulders:
   diameter: [0.30, 0.40]
   height: [0.12, 0.35]              # ASSUMED range for "random heights"
   max_height_ratio: 0.85           # ASSUMED: natural boulders are rarely taller than wide
+  # The rock mesh's underside already extends 4 cm below its origin; the origin is placed `sink`
+  # below the local sand surface, so the rock sits ~5 cm into the sand and shows no gap.
+  sink: 0.01
   min_in_obstacle_zone: 3
   max_in_obstacle_zone: 6           # ASSUMED (schematic shows 5)
   in_excavation_zone: [0, 4]        # ASSUMED (schematic shows 4)
@@ -79,6 +83,8 @@ randomiser:
   clearance: 0.10                   # extra margin on every side of the robot when checking a path exists
   min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other
   keep_off_walls: 0.25              # obstacles at least this far from any wall
+  start_zone_margin: 0.10           # obstacle extent (rim included) stays this far from the start zone
+  construction_zone_margin: 0.05    # same for the construction zone (obstacles of other zones)
   start_pose_margin: 0.05           # robot footprint stays this far inside the start zone
   require_slalom: true              # no straight eastward corridor (W + 2*clearance wide) from the
                                     # start zone to the excavation zone: the route must weave
@@ -114,3 +120,13 @@ situational_cameras:
 sand:
   albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
   tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
+
+terrain:
+  friction: 0.9                     # ASSUMED: ODE mu = mu2 of the sand collision surface
+
+situational_camera_sensor:
+  # Sensor shared by both situational cameras above. ASSUMED (the rules give no spec).
+  fov: 1.2                          # horizontal field of view, rad
+  resolution: [1280, 720]           # px
+  rate_hz: 5
+  clip: [0.1, 40.0]                 # near, far, m

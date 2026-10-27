@@ -60,13 +60,27 @@ def main(argv=None):
         layouts.append(config.load_layout(a.layout))
 
     if a.markers:
+        try:
+            world.check_marker_support(cfg)
+        except world.MarkerError as e:
+            print(f'error: --markers: {e}', file=sys.stderr)
+            return 2
         for p in world.check_markers(cfg):
             print(f'warning [markers]: {p}', file=sys.stderr)
     for lay in layouts:
-        for p in layout_mod.check_layout(cfg, lay, strict=False):
+        # hard = physically wrong (overlaps, outside, no path); strict-only = rulebook deviations
+        hard = layout_mod.check_layout(cfg, lay, strict=False)
+        for p in hard:
             print(f'warning [{lay["name"]}]: {p}', file=sys.stderr)
-        root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
-                                 overlay=a.overlay, low_gfx=a.low_gfx)
+        for p in layout_mod.check_layout(cfg, lay, strict=True):
+            if p not in hard:
+                print(f'info [{lay["name"]}]: {p}', file=sys.stderr)
+        try:
+            root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
+                                     overlay=a.overlay, low_gfx=a.low_gfx)
+        except world.MarkerError as e:
+            print(f'error: --markers: {e}', file=sys.stderr)
+            return 2
         print(f'{root}\n  gz sim -r {root / "arena.sdf"}')
     print(f'WARNING: {a.out}/<name>/truth/ is ground truth for the test harness and scoring only. '
           'The robot stack must never read it.')
