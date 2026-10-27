@@ -1,5 +1,6 @@
 """Layout module tests (no ROS)."""
 import math
+import os
 from pathlib import Path
 import sys
 
@@ -20,10 +21,12 @@ def cfg():
 
 @pytest.fixture(scope='module')
 def layouts(cfg):
-    return [L.random_layout(cfg, s) for s in range(200)]
+    # 60 seeds on every PR keeps CI quick; set CAC_SIM_SEEDS=500 (or more) for a full sweep
+    # after changing the randomiser or arena.yaml limits.
+    return [L.random_layout(cfg, s) for s in range(int(os.environ.get('CAC_SIM_SEEDS', 60)))]
 
 
-def test_200_seeds_pass_strict(cfg, layouts):
+def test_seeds_pass_strict(cfg, layouts):
     for lo in layouts:
         assert L.check_layout(cfg, lo, strict=True) == [], lo['name']
         assert L.path_exists(cfg, lo)[0]

@@ -94,7 +94,9 @@ Everything the rulebook does not give us (wall height, column position and size,
 
 ## Tests
 
-`colcon test --packages-select cac_sim` (pytest in `test/`).
+`colcon test --packages-select cac_sim` (pytest in `test/`). The randomiser tests use 60 seeds so CI
+stays quick. After changing the randomiser or the limits in `arena.yaml`, run the full sweep:
+`CAC_SIM_SEEDS=500 colcon test --packages-select cac_sim` (about 3 minutes).
 
 ## What the sensors see (measured in this sim)
 
