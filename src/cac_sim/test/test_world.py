@@ -184,6 +184,21 @@ def test_lighting_and_hall_floor(tmp_path):
             assert not (inside_x and inside_y), f'{m.get("name")} within 0.3 m of the arena'
 
 
+def test_terrain_sdf_carries_configured_friction(tmp_path):
+    """The sand collision emits terrain.friction as mu = mu2 (inert in gz-sim 8: arena.yaml)."""
+    cfg = config.load_config()
+    cfg['terrain']['friction'] = 0.37
+    root = world.write_world(cfg, config.empty_layout(cfg), tmp_path)
+    w = ET.parse(root / 'arena.sdf').getroot().find('world')
+    terrain = [m for m in w.findall('model') if m.get('name') == 'terrain']
+    assert len(terrain) == 1
+    ode = terrain[0].find('link/collision/surface/friction/ode')
+    assert ode is not None
+    assert float(ode.findtext('mu')) == pytest.approx(0.37)
+    assert float(ode.findtext('mu2')) == pytest.approx(0.37)
+    assert config.load_config()['terrain']['friction'] == pytest.approx(0.5)
+
+
 def test_marker_geometry_lives_in_markers_module():
     cfg = config.load_config()
     assert world.marker_footprints(cfg) == markers_mod.marker_footprints(cfg)
@@ -306,8 +321,10 @@ def test_cli_vary_appearance_flag(tmp_path):
 # lighting defaults), regenerate and update these hashes in the same commit, and say why.
 GOLDEN_SDF_SHA256 = {
     # 2026-10-27: denser fields with obstacles biased onto the rover's routes (intentional)
-    ('random', '3'): '8f4499a539455681066d3405588ace9d4528abc595edadc960b4b0f6beb280e7',
-    ('schematic', None): 'cb17a6e899b7efb90b3fcdce3c33734f715ba19aa64d78c00474c3f7bc8a270f',
+    # 2026-10-27: terrain.friction 0.9 -> 0.5 (dry-sand estimate); only the terrain <mu>/<mu2>
+    # bytes differ (checked by substituting 0.9 back: old hash reproduced). Inert in gz-sim 8.
+    ('random', '3'): 'bdd551f87c4fa6cf15f8f79ba31edac8865e8343b27ee496bee0b62ebea350fa',
+    ('schematic', None): '1e5e39453a97d0ea7ec360ffd839c427dfa58fbc21bb4ce8c50e2c992429aab2',
 }
 
 

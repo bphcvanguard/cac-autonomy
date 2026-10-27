@@ -137,7 +137,13 @@ sand:
   tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
 
 terrain:
-  friction: 0.9                     # ASSUMED: ODE mu = mu2 of the sand collision surface
+  # ASSUMED: Coulomb mu = mu2 of rubber/plastic wheels on dry loose sand. The sand's own shear
+  # strength caps it: internal friction angle ~30-35 deg -> tan ~0.58-0.70 (Wong, Theory of Ground
+  # Vehicles). Net traction of tyres on dry sand is lower, ~0.3-0.5. 0.5 sits in that band.
+  # INERT IN GZ-SIM 8: the physics system builds mesh collisions with AttachMeshShape and drops
+  # <surface>, so the sand is DART's default mu 1.0 whatever this says. DART takes the MIN of the
+  # two surfaces, so the robot's wheel <mu> sets the friction. Measured: README "How the sand drives".
+  friction: 0.5
 
 situational_camera_sensor:
   # Sensor shared by both situational cameras above. ASSUMED (the rules give no spec).

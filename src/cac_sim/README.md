@@ -138,3 +138,46 @@ Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for 
 - The tilled sand is about 4 mm RMS. No flat-sand point fell below -3 cm in any test.
 - These numbers are from the sim, with sim noise. They show the shape of the problem, not the real
   sensor's performance. Re-measure on real sand.
+
+## How the sand drives (measured in this sim)
+
+**The arena's sand friction does nothing in Gazebo Harmonic (gz-sim 8, dartsim).** The physics
+system builds mesh collisions with `AttachMeshShape`, which drops `<surface>`. So the sand is DART's
+default mu 1.0 whatever `terrain.friction` says. DART takes the smaller mu of the two surfaces, so
+**the robot's wheel `<mu>` sets the friction.** Checked by tilting gravity to tan 0.5. Boxes sat still
+on the sand mesh at sand mu 0.3. They slid at box mu 0.3, and on a primitive box floor at mu 0.3.
+`terrain.friction` (0.5, the dry-sand estimate) is still written to the SDF in case that changes.
+
+What dartsim does honour (tested): `<mu>`, `<mu2>`, `<fdir1>`, and `<slip1>`/`<slip2>`
+(creep = slip x force, exactly). It honours them on primitive shapes, and on the robot's own
+wheels. Nothing on the sand mesh is honoured.
+
+Test rover (scratch only, not in this package): 0.6 x 0.3 m, 18.4 kg, 4 wheels r 0.08 m,
+wheelbase 0.40 m, track 0.36 m, gz `DiffDrive` skid-steer, 5 N m per wheel.
+
+| Run | Odometry vs truth |
+|---|---|
+| Straight 4 m at 0.2 m/s, flat, any sand mu or wheel mu 0.1-1.0 | 0.01 % distance, < 0.1 deg heading |
+| Straight 4 m across an 11 cm deep, 50 cm crater | 0.2 % distance |
+| 360 deg in place, wheel mu 1.0 (the default) | rover does not turn (0 deg); odometry says 160 deg |
+| 360 deg in place, wheel mu 0.5 | turns 150 deg; odometry says 360 deg |
+| 360 deg in place, wheel mu 0.4 sideways / 0.6 rolling (`fdir1` = axle) | turns 250-290 deg; odometry says 360 deg |
+| Robot-side `WheelSlip` system, compliance 1 / 1 (not tuned) | 1.3 % distance, but 0.4 m sideways and 10 deg heading drift over 4 m, invisible to odometry |
+
+With wheel mu 0.5, or with 0.4 / 0.6, the rover drove out of the 11 cm crater from its centre and
+turned in place inside it.
+
+What this means for the robot team:
+- **Straight-line wheel odometry is near perfect in sim (< 0.3 %).** Real dry sand gives ~5-10 %
+  of distance. Coulomb friction alone never makes a flat-ground slip like that. There is no rolling
+  resistance, sinkage or bulldozing in the sim. So localisation tested here will look better than it
+  will be on real sand. Add the error on purpose: a scale error plus heading drift in the odometry
+  path, or tune the robot-side `gz::sim::systems::WheelSlip` plugin.
+- **Turning in place is where the error shows up.** With the geometric track, the odometry
+  overstates in-place yaw by 70-210 deg per turn. Calibrate an effective track, or take yaw from
+  the IMU. Real skid-steer robots have the same problem.
+- **Set wheel friction on the robot.** Use `<mu>` about 0.5, or anisotropic, with `<fdir1>` along
+  the axle. At the default mu 1.0, a skid-steer longer than it is wide stalls when it turns in place.
+- **Whether it turns depends on the friction pyramid's orientation.** At wheel mu 0.5 with `<fdir1>`
+  along the axle (isotropic), the rover did not turn at all. Without `<fdir1>` it turned 150 deg.
+  Re-measure on the real robot on real sand. These numbers show the shape of the problem only.
