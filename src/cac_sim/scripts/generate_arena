@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Generate CAC arena worlds for Gazebo Harmonic. See cac_sim/README.md."""
+import argparse
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+for cand in (HERE.parent, HERE.parent.parent / 'lib' / 'python3' / 'dist-packages'):
+    if (cand / 'cac_sim_gen').is_dir():
+        sys.path.insert(0, str(cand))
+        break
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--layout', default='schematic',
+                    help='schematic | empty | random | path/to/layout.yaml (default: schematic)')
+    ap.add_argument('--seed', type=int, default=1, help='random layout seed (default 1)')
+    ap.add_argument('--count', type=int, default=1, help='random: generate seeds SEED..SEED+COUNT-1')
+    ap.add_argument('--config', default=None, help='arena.yaml override (default: the packaged one)')
+    ap.add_argument('--out', required=True, help='output directory; one sub-directory per world')
+    ap.add_argument('--markers', action='store_true', help='add ArUco marker boards')
+    ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
+    ap.add_argument('--overlay', action='store_true', help='draw zones/target (visual only, debugging)')
+    ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
+    a = ap.parse_args(argv)
+
+    from cac_sim_gen import config, layout as layout_mod, world
+    cfg = config.load_config(a.config)
+
+    layouts = []
+    if a.layout == 'random':
+        for s in range(a.seed, a.seed + max(a.count, 1)):
+            lay = layout_mod.random_layout(cfg, s)
+            lay['name'] = f'seed_{s:04d}'
+            layouts.append(lay)
+    elif a.layout == 'empty':
+        layouts.append(config.empty_layout(cfg))
+    else:
+        layouts.append(config.load_layout(a.layout))
+
+    for lay in layouts:
+        problems = layout_mod.check_layout(cfg, lay, strict=False)
+        for p in problems:
+            print(f'warning [{lay["name"]}]: {p}', file=sys.stderr)
+        root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
+                                 overlay=a.overlay, low_gfx=a.low_gfx)
+        print(f'{root}\n  gz sim -r {root / "arena.sdf"}')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

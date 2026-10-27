@@ -1,0 +1,82 @@
+# CAC 2027 arena: the ONE source of truth for geometry and for the rules the randomiser obeys.
+# Frame `arena`: origin (0,0,0 deg) = bottom-left corner of the start zone = arena corner.
+# x along the 9 m side (west -> east), y along the 5 m side (south -> north), z up, z = 0 = sand surface.
+# Sources: rulebook "ARENA: Specifications" + schematic (docs/source in the planning repo).
+# Every value marked ASSUMED is not in the rulebook. Confirm at the Pre-Task Briefing and update here.
+# Rectangles are [x_min, y_min, x_max, y_max] in metres.
+
+arena:
+  size: [9.0, 5.0]                  # "~9 m long and ~5.0 m wide"
+  sand_depth: 0.30                  # "~30 cm depth of sand", tilled and dry
+  wall:
+    height: 0.60                    # ASSUMED: wall height above the sand
+    thickness: 0.05                 # ASSUMED
+
+zones:
+  start: [0.0, 0.0, 2.0, 2.0]       # 2 x 2 m, no rocks or craters
+  obstacle: [0.0, 0.0, 5.0, 5.0]    # "5 m" label; the start zone sits inside it
+  excavation: [5.0, 0.0, 9.0, 5.0]  # "4 m" label; the only place sand may be dug
+  construction: [6.4, 3.0, 9.0, 5.0]  # 2.6 x 2.0 m, top-right corner
+
+berm:
+  # The rulebook table and the schematic disagree. Default = the SMALLER pair (design to the worst case).
+  #   table:     berm 1.3 x 0.7,   target 1.5 x 0.9
+  #   schematic: berm 1.7 x 0.83,  target 1.9 x 1.03
+  target_centre: [7.91, 4.26]       # measured from the schematic (zone-wise pixel mapping)
+  target_size: [1.5, 0.9]
+  target_size_schematic: [1.9, 1.03]
+
+column:
+  # "Central support structure column ... an obstacle and must be avoided."
+  # Position, shape and size are NOT given anywhere. ASSUMED: arena centre, round, 30 cm.
+  centre: [4.5, 2.5]
+  radius: 0.15
+  height: 3.0
+
+boulders:
+  # Obstacle zone: at least 3, diameter ~30-40 cm, "random heights", sitting ON the surface.
+  # Excavation zone: may contain boulders no bigger than the obstacle-zone ones.
+  diameter: [0.30, 0.40]
+  height: [0.12, 0.35]              # ASSUMED range for "random heights"
+  min_in_obstacle_zone: 3
+  max_in_obstacle_zone: 6           # ASSUMED (schematic shows 5)
+  in_excavation_zone: [0, 4]        # ASSUMED (schematic shows 4)
+
+craters:
+  # Obstacle zone: at least 3, "varying depth and width, no wider or deeper than 40-50 cm".
+  # Depth is capped by the sand depth: a crater is a hole in the 30 cm sand layer.
+  diameter: [0.30, 0.50]
+  depth: [0.10, 0.30]
+  rim_height: [0.00, 0.04]          # ASSUMED: dug sand piled around the edge
+  min_in_obstacle_zone: 3
+  max_in_obstacle_zone: 5           # ASSUMED
+  in_excavation_zone: [0, 2]        # ASSUMED (schematic shows 1)
+
+randomiser:
+  # Judges build the field to "require obstacle detection, mapping, and navigation planning to determine
+  # a slalom route". A layout is valid only if a robot of this footprint can get from the start zone to
+  # the excavation zone without touching anything.
+  robot_footprint: [1.5, 0.75]      # stowed envelope from the rules (L x W); the old rover is smaller
+  clearance: 0.10                   # extra margin on every side of the robot when checking a path exists
+  min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other
+  keep_off_walls: 0.25              # obstacles at least this far from any wall
+  start_pose_margin: 0.05           # robot footprint stays this far inside the start zone
+
+markers:
+  # Example layout from the stack handbook (ticket LOC-4), NOT final. Rules: max 4, start-zone frame
+  # (2 sides) + 1 on the start-zone wall, all below 60 cm. Disabled by default; enable with --markers.
+  dictionary: DICT_4X4_50
+  size: 0.20                        # ASSUMED printed tag size (black square edge)
+  list:
+    - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
+    - {id: 2, position: [2.00, 0.40, 0.35], yaw_deg: 0}   # east side of the start-zone frame, faces +x
+    - {id: 3, position: [0.80, 2.00, 0.35], yaw_deg: 45}  # north side of the start-zone frame, faces NE
+
+situational_cameras:
+  # "Two situational awareness cameras will be available." Position ASSUMED: high in two corners.
+  - {name: sitcam_sw, position: [-0.3, -0.3, 3.0], look_at: [4.5, 2.5, 0.0]}
+  - {name: sitcam_ne, position: [9.3, 5.3, 3.0], look_at: [4.5, 2.5, 0.0]}
+
+sand:
+  albedo: [0.76, 0.69, 0.52]        # dry tilled sand
+  tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
