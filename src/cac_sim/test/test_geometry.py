@@ -2,6 +2,7 @@
 
 Run: PYTHONPATH= python3 -m pytest test/test_geometry.py -q
 """
+import math
 from pathlib import Path
 import struct
 import sys
@@ -30,7 +31,7 @@ def worst(cfg):
     """Max crater count, max size, spread over the arena (incl. one touching a wall)."""
     pos = [(1.0, 3.0), (2.5, 4.4), (3.0, 1.0), (4.0, 3.2), (3.4, 2.2), (6.0, 1.0), (8.6, 4.6)]
     return {'name': 'worst', 'seed': 3, 'boulders': [], 'start_pose': {},
-            'craters': [{'position': list(p), 'diameter': 0.5, 'depth': 0.3} for p in pos]}
+            'craters': [{'position': list(p), 'diameter': 0.5, 'depth_ratio': 0.25} for p in pos]}
 
 
 def _edge_counts(faces):
@@ -98,11 +99,19 @@ def test_terrain_refined_at_craters(cfg, schematic):
     assert np.allclose(v[:, 2], g.surface_height(cfg, schematic, v[:, 0], v[:, 1], 0))
 
 
+def _params(cfg, layout, seed):
+    return [g.crater_params(cfg, layout, i, seed) for i in range(len(layout['craters']))]
+
+
 def test_crater_depth_and_flat_sand(cfg, schematic):
     rough = cfg['sand']['tilled_roughness']
-    for c in schematic['craters']:
+    lo, hi = cfg['craters']['depth_ratio']
+    for c, p in zip(schematic['craters'], _params(cfg, schematic, 0)):
         z = g.surface_height(cfg, schematic, c['position'][0], c['position'][1], 0)
-        assert abs(z + c['depth']) <= 0.01
+        assert abs(z + p['depth_eff']) <= 0.002
+        assert lo * c['diameter'] - 1e-9 <= p['depth_eff'] <= hi * c['diameter'] + 1e-9
+        assert p['outer_radius'] == pytest.approx(1.4 * c['diameter'] / 2)
+        assert p['max_slope_deg_eff'] <= cfg['craters']['max_slope_deg'] + 1e-9
     xs, ys = np.meshgrid(np.linspace(0, 9, 400), np.linspace(0, 5, 250))
     z = g.surface_height(cfg, schematic, xs, ys, 0)
     assert np.isfinite(z).all()
@@ -114,21 +123,109 @@ def test_crater_depth_and_flat_sand(cfg, schematic):
     assert z[far].std() > 0.2 * rough          # the relief is actually there
 
 
-def test_crater_rim_explicit(cfg):
-    lay = {'craters': [{'position': [2, 2], 'diameter': 0.4, 'depth': 0.15, 'rim': 0.04}]}
-    flat = dict(cfg, sand=dict(cfg['sand'], tilled_roughness=0.0))
-    r = np.linspace(0, 0.6, 200)
-    z = g.surface_height(flat, lay, 2 + r, np.full_like(r, 2.0), 0)
-    assert abs(z[0] + 0.15) < 1e-3
-    assert 0.03 < z.max() <= 0.04 + 1e-9
-    assert r[np.argmax(z)] > 0.2                # rim peaks outside the hole edge
-    assert np.all(np.diff(z[r < 0.18]) >= -1e-12)   # bowl rises monotonically to the lip
+@pytest.mark.parametrize('d', [0.30, 0.40, 0.50])
+@pytest.mark.parametrize('ratio,rim_ratio', [(0.10, 0.04), (0.10, 0.08), (0.25, 0.04),
+                                             (0.25, 0.08), (0.45, 0.0)])
+def test_crater_profile(d, ratio, rim_ratio):
+    cap = 38.0
+    depth, rim = ratio * d, rim_ratio * d
+    eff = g.effective_crater_depth(d, depth, rim, cap)
+    assert eff <= depth + 1e-12
+    if ratio <= 0.10:
+        assert eff == pytest.approx(depth)        # shallow bowls are never clamped
+    prof = g.crater_profile(d, depth, rim, cap)
+    outer = g.crater_outer_radius(d, rim, cap)
+    h = 1e-4
+    r = np.arange(0.0, outer + 0.1, h)
+    z = prof(r)
+    assert z[0] == pytest.approx(-eff, abs=1e-9)
+    crest = r[np.argmax(z)]
+    assert d / 2 < crest < 1.1 * d / 2              # rim crest just outside R
+    assert np.all(np.abs(z[r >= outer]) < 1e-12)
+    assert 1.3 * d / 2 <= outer <= 1.5 * d / 2
+    slope = np.diff(z) / h
+    assert np.degrees(np.arctan(np.abs(slope).max())) <= cap + 1.0
+    # Bowl, not a cone: deepest at the centre with zero slope there, monotonic up to the crest.
+    assert abs(slope[0]) < 0.01
+    assert np.all(np.diff(z[r <= crest]) >= -1e-12)
+    # No crease anywhere: slope changes continuously (second difference bounded by curvature).
+    curv = np.abs(np.diff(slope)) / h
+    assert curv.max() < 12.0 * (eff + rim + 1e-3) / (d / 2) ** 2 * 4
+    assert np.abs(np.diff(slope)).max() < 0.01
+    # The slope cap alone limits depth/diameter to tan(cap) * 1.05 / 3 (0.27 at 38 deg).
+    assert eff <= math.tan(math.radians(cap)) * 1.05 / 3 * d + 1e-9
+
+
+def test_crater_surface_slope_and_extent(cfg):
+    """Max slope of the real surface <= max_slope_deg + 1; nothing disturbed beyond outer."""
+    cap = cfg['craters']['max_slope_deg']
+    craters = [{'position': [2.0, 2.0], 'diameter': 0.5, 'depth_ratio': 0.25, 'rim': 0.04},
+               {'position': [4.0, 3.0], 'diameter': 0.3, 'depth': 0.2},
+               {'position': [6.0, 1.5], 'diameter': 0.4}]
+    lay = {'craters': craters}
+    h = 0.002
+    for rough in (0.0, cfg['sand']['tilled_roughness']):
+        c2 = dict(cfg, sand=dict(cfg['sand'], tilled_roughness=rough))
+        for c, p in zip(craters, _params(c2, lay, 7)):
+            cx, cy = c['position']
+            outer = p['outer_radius']
+            xs, ys = np.meshgrid(np.arange(cx - outer - 0.1, cx + outer + 0.1, h),
+                                 np.arange(cy - outer - 0.1, cy + outer + 0.1, h))
+            z = g.surface_height(c2, lay, xs, ys, 7)
+            gy, gx = np.gradient(z, h)
+            slope = np.degrees(np.arctan(np.hypot(gx, gy)))
+            rr = np.hypot(xs - cx, ys - cy)
+            # With roughness on, check the dug part (inside D/2); with it off, everything.
+            region = rr < outer if rough == 0.0 else rr < c['diameter'] / 2
+            assert slope[region].max() <= cap + 1.0
+            assert z[rr < 0.01].min() == pytest.approx(-p['depth_eff'], abs=0.002)
+            flat = g.surface_height(c2, {'craters': []}, xs, ys, 7)
+            disturbed = np.abs(z - flat) > 0.001
+            assert disturbed.any()
+            assert rr[disturbed].max() <= outer + 1e-9
+
+
+def test_crater_overrides_and_draws(cfg):
+    """Layout depth / depth_ratio / rim win; otherwise drawn per crater, stable when adding."""
+    lo, hi = cfg['craters']['depth_ratio']
+    rlo, rhi = cfg['craters']['rim_ratio']
+    craters = [{'position': [0.6 + 0.8 * i, 2.0], 'diameter': 0.3 + 0.02 * i} for i in range(10)]
+    craters[0]['depth'] = 0.05
+    craters[1]['depth_ratio'] = 0.12
+    craters[2]['rim'] = 0.0
+    lay = {'craters': craters}
+    ps = _params(cfg, lay, 11)
+    assert ps[0]['depth'] == 0.05 and ps[0]['depth_eff'] == pytest.approx(0.05)
+    assert ps[1]['depth'] == pytest.approx(0.12 * 0.32)
+    assert ps[2]['rim'] == 0.0
+    ratios = [p['depth'] / p['diameter'] for p in ps[2:]]
+    assert all(lo <= q <= hi for q in ratios) and max(ratios) - min(ratios) > 0.03
+    assert all(rlo * p['diameter'] * 0.7 <= p['rim'] <= rhi * p['diameter'] + 1e-12
+               for p in ps[3:])
+    assert _params(cfg, lay, 11) == ps
+    more = {'craters': craters + [dict(craters[5], position=[9.0, 4.0])]}
+    assert _params(cfg, more, 11)[:10] == ps
+
+
+def test_fine_band_covers_disturbed_region(cfg, schematic):
+    m = g.build_terrain(cfg, schematic, 0)
+    v = m.vertices
+    for c, p in zip(schematic['craters'], _params(cfg, schematic, 0)):
+        outer = p['outer_radius']
+        ring = np.abs(np.hypot(v[:, 0] - c['position'][0], v[:, 1] - c['position'][1])
+                      - (outer - 0.01)) < 0.01
+        # 2 cm wide ring just inside the outer radius: fine spacing gives >> coarse count.
+        expected_fine = 2 * np.pi * outer * 0.02 / 0.015 ** 2
+        assert ring.sum() > 0.5 * expected_fine
 
 
 def test_sand_depth_clamp(cfg):
+    cr = dict(cfg['craters'], max_slope_deg=89.0)
     lay = {'craters': [{'position': [2, 2], 'diameter': 0.5, 'depth': 0.6}]}
-    z = g.surface_height(cfg, lay, 2.0, 2.0, 1)
+    c2 = dict(cfg, craters=cr)
+    z = g.surface_height(c2, lay, 2.0, 2.0, 1)
     assert z == pytest.approx(-cfg['arena']['sand_depth'])
+    assert g.crater_params(c2, lay, 0, 1)['depth_eff'] == cfg['arena']['sand_depth']
 
 
 def test_determinism(cfg, schematic):

@@ -14,10 +14,11 @@ from .mesh import Mesh
 
 # RNG stream ids owned by this module.
 STREAM_TILL = 1      # tilled-sand relief
-STREAM_RIM = 2       # crater rim heights (per crater index)
+STREAM_RIM = 2       # crater rim height ratios (per crater index)
 STREAM_ROCK = 3      # rock shape
 STREAM_SAND_TEX = 4
 STREAM_ROCK_TEX = 5
+STREAM_DEPTH = 6     # crater depth ratios (per crater index)
 
 UV_TILE = 1.0        # metres of terrain per texture repeat
 
@@ -75,29 +76,128 @@ def _tilled(x, y, seed):
     return _waves(x, y, p['low']) + furrow + _waves(x, y, p['fine'])
 
 
+DEFAULT_MAX_SLOPE_DEG = 38.0   # dry sand cannot hold a steeper face
+DEFAULT_DEPTH_RATIO = (0.10, 0.25)
+DEFAULT_RIM_RATIO = (0.04, 0.08)
+RIM_CREST = 1.05               # rim crest radius / R  (R = D/2)
+RIM_OUTER = 0.35               # outer-flank width / R: terrain is untouched beyond 1.40 R
+
+
+def _shape(diameter, depth, rim, max_slope_deg):
+    """Return (R, crest_r, flank_w, depth_eff, rim_eff, steepest_deg) of one crater.
+
+    Profile (smoothstep S(t) = 3t^2 - 2t^3, r = distance from centre):
+      r <= crest_r:  z = -depth + (depth + rim) * S(r / crest_r)   bowl: parabolic near the
+                     centre, steepest mid-wall, zero slope at the rim crest (no lip crease)
+      crest_r < r < crest_r + flank_w:  z = rim * (1 - S((r - crest_r) / flank_w))   outer flank
+      beyond:        z = 0
+    Steepest slope = max(1.5 (depth + rim) / crest_r, 1.5 rim / flank_w). If that exceeds
+    `max_slope_deg`, depth and rim are scaled down together until it does not.
+    """
+    R = 0.5 * float(diameter)
+    rc, wo = RIM_CREST * R, RIM_OUTER * R
+    d, h = max(0.0, float(depth)), max(0.0, float(rim))
+    steep = max(1.5 * (d + h) / rc, 1.5 * h / wo)
+    cap = math.tan(math.radians(float(max_slope_deg)))
+    if steep > cap:
+        d, h, steep = d * cap / steep, h * cap / steep, cap
+    return R, rc, wo, d, h, math.degrees(math.atan(steep))
+
+
+def effective_crater_depth(diameter, depth, rim=0.0, max_slope_deg=DEFAULT_MAX_SLOPE_DEG,
+                           sand_depth=None):
+    """Floor depth below undisturbed sand after the slope cap (and the sand-depth cap, if given).
+
+    Equals `depth` unless 1.5 * (depth + rim) / (1.05 * D/2) > tan(max_slope_deg), in which case
+    depth and rim are scaled down together (see _shape).
+    """
+    d = _shape(diameter, depth, rim, max_slope_deg)[3]
+    return min(d, float(sand_depth)) if sand_depth is not None else d
+
+
+def crater_outer_radius(diameter, rim=None, max_slope_deg=None):
+    """Radius beyond which the terrain is exactly the undisturbed tilled surface: 1.40 * D/2.
+
+    The rim crest is at 1.05 * D/2 and its outer flank reaches z = 0 at 1.40 * D/2; the tilled
+    relief blends back in over D/2 .. 1.40 * D/2. Independent of rim height and slope (the
+    arguments are accepted for API compatibility).
+    """
+    return (RIM_CREST + RIM_OUTER) * 0.5 * float(diameter)
+
+
+def crater_profile(diameter, depth, rim, max_slope_deg=DEFAULT_MAX_SLOPE_DEG):
+    """Radial height function z(r) of one crater relative to undisturbed sand (no tilled relief).
+
+    Shallow bowl + soft raised rim, slope-continuous everywhere, see _shape(). Returns f(r) ->
+    ndarray, vectorised.
+    """
+    _R, rc, wo, d, h, _s = _shape(diameter, depth, rim, max_slope_deg)
+
+    def smooth(t):
+        t = np.clip(t, 0.0, 1.0)
+        return t * t * (3.0 - 2.0 * t)
+
+    def z_of_r(r):
+        r = np.asarray(r, dtype=float)
+        inner = -d + (d + h) * smooth(r / rc)
+        outer = h * (1.0 - smooth((r - rc) / wo))
+        return np.where(r <= rc, inner, outer)
+    return z_of_r
+
+
+def crater_params(cfg, layout, i, seed):
+    """Resolve crater `i` of `layout` to the exact numbers the terrain is built from.
+
+    Returns dict(position, diameter, depth (requested), depth_eff, rim, max_slope_deg_eff,
+    wall_deg (= max_slope_deg_eff, kept for older callers), outer_radius).
+    Requested depth: layout 'depth' (m) if given, else layout 'depth_ratio' * D, else a ratio drawn
+    uniformly in craters.depth_ratio from stream [seed, 6, i]. Rim: layout 'rim' (m) if given,
+    else craters.rim_ratio * D drawn from stream [seed, 2, i]. `rim` in the result is the rim
+    height actually built (after the slope cap). Use this in layout checks, world building and
+    truth so every module sees the same crater.
+    """
+    c = (layout.get('craters') or [])[i]
+    ccfg = cfg['craters']
+    diameter = float(c['diameter'])
+    if c.get('depth') is not None:
+        depth = float(c['depth'])
+    else:
+        ratio = c.get('depth_ratio')
+        if ratio is None:
+            lo, hi = ccfg.get('depth_ratio', DEFAULT_DEPTH_RATIO)
+            ratio = np.random.default_rng([_seed(seed), STREAM_DEPTH, i]).uniform(lo, hi)
+        depth = float(ratio) * diameter
+    if c.get('rim') is not None:
+        rim = float(c['rim'])
+    else:
+        lo, hi = ccfg.get('rim_ratio', DEFAULT_RIM_RATIO)
+        rim = float(np.random.default_rng([_seed(seed), STREAM_RIM, i]).uniform(lo, hi)) * diameter
+    cap = float(ccfg.get('max_slope_deg', DEFAULT_MAX_SLOPE_DEG))
+    _R, _rc, _wo, d, h, steep = _shape(diameter, depth, rim, cap)
+    return {
+        'position': [float(c['position'][0]), float(c['position'][1])],
+        'diameter': diameter, 'depth': depth,
+        'depth_eff': min(d, float(cfg['arena']['sand_depth'])),
+        'rim': h, 'max_slope_deg_eff': steep, 'wall_deg': steep,
+        'outer_radius': crater_outer_radius(diameter),
+    }
+
+
 def _crater_params(cfg, layout, seed):
-    """[(cx, cy, R, depth, rim, rim_width)] for every crater in the layout."""
-    lo, hi = cfg['craters'].get('rim_height', [0.0, 0.0])
+    """[(cx, cy, diameter, depth_eff, rim_eff)] for every crater in the layout."""
     out = []
-    for i, c in enumerate(layout.get('craters') or []):
-        if 'rim' in c and c['rim'] is not None:
-            rim = float(c['rim'])
-        else:
-            rim = float(np.random.default_rng([_seed(seed), STREAM_RIM, i]).uniform(lo, hi))
-        r = 0.5 * float(c['diameter'])
-        out.append((float(c['position'][0]), float(c['position'][1]), r, float(c['depth']), rim,
-                    0.3 * r + 0.02))
+    for i in range(len(layout.get('craters') or [])):
+        p = crater_params(cfg, layout, i, seed)
+        out.append((p['position'][0], p['position'][1], p['diameter'], p['depth_eff'], p['rim']))
     return out
 
 
-def _bowl(s):
-    """Normalised crater profile: 1 at the centre, 0 at s = r/R >= 1, C1-smooth both ends."""
-    s = np.clip(s, 0.0, 1.0)
-    return 0.5 * (1.0 + np.cos(np.pi * s))
-
-
 def surface_height(cfg, layout, x, y, seed):
-    """Sand surface height z(x, y) [m]; z = 0 is undisturbed sand. Vectorised over x, y."""
+    """Sand surface height z(x, y) [m]; z = 0 is undisturbed sand. Vectorised over x, y.
+
+    Outside every crater_outer_radius() the result is exactly the tilled relief. Inside D/2 the
+    relief is absent (the hole was dug); between D/2 and the outer radius it blends back in.
+    """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     x, y = np.broadcast_arrays(x, y)
@@ -105,20 +205,14 @@ def surface_height(cfg, layout, x, y, seed):
     sand_depth = float(cfg['arena']['sand_depth'])
 
     z = np.zeros(x.shape)
-    fade = np.ones(x.shape)    # tilled relief fades out towards crater floors
-    for cx, cy, r, depth, rim, w in _crater_params(cfg, layout, seed):
+    fade = np.ones(x.shape)
+    for cx, cy, diameter, depth, rim in _crater_params(cfg, layout, seed):
         d = np.hypot(x - cx, y - cy)
-        b = _bowl(d / r)
-        # A dug hole in dry sand: the cosine bowl is as gentle as the diameter allows. For the
-        # rule sizes (D 0.3-0.5 m, depth 0.1-0.3 m) its steepest wall is 32-62 deg, i.e. at or
-        # above the angle of repose, which matches a freshly dug hole.
-        z -= depth * b
-        if rim > 0.0:
-            # Dug sand piled around the lip: Gaussian ring peaking just outside the edge,
-            # suppressed towards the centre so the floor depth is exact.
-            ring = np.exp(-((d - (r + 0.25 * w)) / w) ** 2) * np.clip(d / r, 0.0, 1.0) ** 2
-            z += rim * ring
-        fade *= 1.0 - b
+        # depth/rim are already slope-capped; 90 deg means "no further cap".
+        z += crater_profile(diameter, depth, rim, 90.0)(d)
+        R = 0.5 * diameter
+        t = np.clip((d - R) / (crater_outer_radius(diameter) - R), 0.0, 1.0)
+        fade *= t * t * (3.0 - 2.0 * t)
     z += rough * fade * _tilled(x, y, seed)
     return np.maximum(z, -sand_depth)
 
@@ -143,8 +237,8 @@ def _refine_mask(nx, ny, dx, dy, craters, margin):
     gx, gy = np.meshgrid(ic, jc, indexing='ij')
     mask = np.zeros((nx, ny), dtype=bool)
     half_diag = 0.5 * math.hypot(dx, dy)
-    for cx, cy, r, _depth, rim, w in craters:
-        reach = r + (w if rim > 0 else 0.0) + margin + half_diag
+    for cx, cy, diameter, _depth, _rim in craters:
+        reach = crater_outer_radius(diameter) + margin + half_diag
         mask |= np.hypot(gx - cx, gy - cy) < reach
     return mask
 

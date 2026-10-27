@@ -31,10 +31,19 @@ add_custom_command(
   COMMENT "cac_sim: generating default arena worlds"
   VERBATIM)
 add_custom_target(cac_sim_worlds ALL DEPENDS ${_worlds_stamp})
-install(DIRECTORY ${_worlds_dir}/ DESTINATION share/${PROJECT_NAME}/worlds)
+# Ground truth (truth.yaml, map.png) must NOT sit next to the world: it goes to share/cac_sim/truth/.
+install(DIRECTORY ${_worlds_dir}/ DESTINATION share/${PROJECT_NAME}/worlds
+  PATTERN "truth" EXCLUDE)
+foreach(_n schematic empty seed_0001 seed_0002 seed_0003 seed_0004 seed_0005)
+  install(FILES ${_worlds_dir}/${_n}/truth/truth.yaml
+    DESTINATION share/${PROJECT_NAME}/truth RENAME ${_n}.yaml)
+  install(FILES ${_worlds_dir}/${_n}/truth/map.png
+    DESTINATION share/${PROJECT_NAME}/truth RENAME ${_n}.png)
+endforeach()
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
+  # runs every test/test_*.py, including test_flake8.py (ament_flake8, max line length 99)
   ament_add_pytest_test(cac_sim_tests test
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
     TIMEOUT 600)

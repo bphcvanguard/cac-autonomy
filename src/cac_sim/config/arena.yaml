@@ -9,8 +9,13 @@ arena:
   size: [9.0, 5.0]                  # "~9 m long and ~5.0 m wide"
   sand_depth: 0.30                  # "~30 cm depth of sand", tilled and dry
   wall:
-    height: 0.60                    # ASSUMED: wall height above the sand
-    thickness: 0.05                 # ASSUMED
+    # Not in the rulebook. The CAC arena text is copied from NASA Lunabotics; the KSC Artemis
+    # Arena has low light-beige walls ~0.4-0.6 m above the regolith. ASSUMED from that analogue.
+    height: 0.50
+    thickness: 0.08                 # ASSUMED
+    # Artemis also runs a ~17 cm PVC duct along the inside of the walls, lying on the sand.
+    # Unknown for CAC, so off (0.0). Set 0.17 to test it: it is a low obstacle along every wall.
+    inner_pipe_diameter: 0.0
 
 zones:
   start: [0.0, 0.0, 2.0, 2.0]       # 2 x 2 m, no rocks or craters
@@ -27,10 +32,15 @@ berm:
   target_size_schematic: [1.9, 1.03]
 
 column:
-  # "Central support structure column ... an obstacle and must be avoided."
-  # Position, shape and size are NOT given anywhere. ASSUMED: arena centre, round, 30 cm.
+  # "Arena has a central support structure column which is an obstacle and must be avoided."
+  # The CAC schematic does not draw it. That sentence is copied from the NASA Lunabotics guidebook,
+  # whose Artemis Arena drawing shows a SQUARE column of ~0.5 x 0.5 m near the arena centre (a
+  # box-truss tower). Photos seen by the team lead also suggest a rectangular column.
+  # ASSUMED: square 0.5 x 0.5 m at the arena centre, floor to ceiling. Confirm at the PTB.
+  shape: box                        # box | cylinder
   centre: [4.5, 2.5]
-  radius: 0.15
+  size: [0.5, 0.5]                  # box: x and y extent; cylinder: size[0] = diameter
+  yaw_deg: 0.0
   height: 3.0
 
 boulders:
@@ -41,13 +51,21 @@ boulders:
   min_in_obstacle_zone: 3
   max_in_obstacle_zone: 6           # ASSUMED (schematic shows 5)
   in_excavation_zone: [0, 4]        # ASSUMED (schematic shows 4)
+  in_construction_zone: [0, 0]      # rules 6 and 13 let judges push obstacles in; default off
 
 craters:
   # Obstacle zone: at least 3, "varying depth and width, no wider or deeper than 40-50 cm".
   # Depth is capped by the sand depth: a crater is a hole in the 30 cm sand layer.
   diameter: [0.30, 0.50]
-  depth: [0.10, 0.30]
-  rim_height: [0.00, 0.04]          # ASSUMED: dug sand piled around the edge
+  # Shape = shallow bowl + soft raised rim (geometry.crater_profile), sized by RATIOS to D.
+  # ASSUMED: simple impact craters have depth/diameter ~0.2; raked/dug sand dishes 0.1-0.25. The
+  # rulebook's "no deeper than 40-50 cm" is an upper bound only. D 0.3-0.5 m -> depth ~3-12 cm.
+  # A layout crater may override with `depth` (m) or `depth_ratio`.
+  depth_ratio: [0.10, 0.25]
+  rim_ratio: [0.04, 0.08]           # ASSUMED: rim crest height / D; layout override `rim` (m)
+  # Hard cap: dry sand cannot hold a steeper face (angle of repose ~30-35 deg, ~38 slightly damp).
+  # If a crater would be steeper, depth and rim are scaled down together (truth reports depth_eff).
+  max_slope_deg: 38.0
   min_in_obstacle_zone: 3
   max_in_obstacle_zone: 5           # ASSUMED
   in_excavation_zone: [0, 2]        # ASSUMED (schematic shows 1)
@@ -61,16 +79,31 @@ randomiser:
   min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other
   keep_off_walls: 0.25              # obstacles at least this far from any wall
   start_pose_margin: 0.05           # robot footprint stays this far inside the start zone
+  require_slalom: true              # no straight eastward corridor (W + 2*clearance wide) from the
+                                    # start zone to the excavation zone: the route must weave
+  slalom_band: [2.0, 5.0]           # x range the robot must cross; most obstacles are drawn here
 
 markers:
-  # Example layout from the stack handbook (ticket LOC-4), NOT final. Rules: max 4, start-zone frame
-  # (2 sides) + 1 on the start-zone wall, all below 60 cm. Disabled by default; enable with --markers.
+  # Rules: max 4, "on the bin frame structure along the perimeter of the starting zone (2 sides)"
+  # + 1 on the start-zone wall, all below 60 cm. Disabled by default; enable with --markers.
+  # "Perimeter of the starting zone (2 sides)" can be read two ways, so there are two presets:
+  #   frame_inner:     on the start zone's two INNER edges (x = 2, y = 2), facing the field.
+  #                    Example layout from the stack handbook (ticket LOC-4), NOT final.
+  #   perimeter_walls: on the two arena walls that bound the start zone (west, south).
+  # Choose with `preset` here or `generate_arena --marker-preset NAME`. Organiser question open.
   dictionary: DICT_4X4_50
   size: 0.20                        # ASSUMED printed tag size (black square edge)
-  list:
-    - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
-    - {id: 2, position: [2.00, 0.40, 0.35], yaw_deg: 0}   # east side of the start-zone frame, faces +x
-    - {id: 3, position: [0.80, 2.00, 0.35], yaw_deg: 45}  # north side of the start-zone frame, faces NE
+  preset: frame_inner
+  presets:
+    frame_inner:
+      - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 2, position: [2.00, 0.40, 0.35], yaw_deg: 0}   # east side of the start zone, faces +x
+      - {id: 3, position: [0.80, 2.00, 0.35], yaw_deg: 45}  # north side of the start zone, faces NE
+    perimeter_walls:
+      - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 2, position: [0.00, 0.40, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 3, position: [1.20, 0.00, 0.35], yaw_deg: 90}  # south wall, faces +y
+      - {id: 4, position: [0.40, 0.00, 0.35], yaw_deg: 90}  # south wall, faces +y
 
 situational_cameras:
   # "Two situational awareness cameras will be available." Position ASSUMED: high in two corners.

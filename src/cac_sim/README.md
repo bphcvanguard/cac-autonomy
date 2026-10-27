@@ -11,6 +11,16 @@ Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders,
 source install/setup.bash
 gz sim -r $(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/schematic/arena.sdf
 gz sim -s -r <world>      # headless server, no GUI
+gz sim -s -r --headless-rendering <world>   # headless, but cameras/LiDAR still render (slow PCs)
+```
+
+**Give every Gazebo its own partition.** Gazebo finds other Gazebo instances on the same network
+automatically, so two teammates on the same Wi-Fi (or two sims on one PC) silently connect: your
+window shows someone else's world, or your robot gets their commands. Put this in your `~/.bashrc`
+(inside the container too) with your own name:
+
+```bash
+export GZ_PARTITION=$USER-$(hostname)
 ```
 
 Arena frame: origin at the start-zone corner, x along the 9 m side, y along the 5 m side, z = 0 at the undisturbed sand. The Gazebo world frame is the same frame.
@@ -31,19 +41,22 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--seed N`, `--count K` | random layouts for seeds N .. N+K-1 (same seed = same arena) |
 | `--out DIR` | one sub-directory per world; the SDF uses relative paths, so it can be moved |
 | `--markers` | ArUco boards from `arena.yaml` (needs `python3-opencv`, else skipped with a warning) |
+| `--marker-preset NAME` | `frame_inner` (start zone's inner edges, default) or `perimeter_walls` (the west and south walls). The rule text allows both readings; see `arena.yaml` |
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows, for slow laptops |
 
-Each world directory holds `arena.sdf`, `meshes/`, `materials/`, `truth.yaml` and `map.png`.
+Each world directory holds `arena.sdf`, `meshes/`, `materials/` and a `truth/` sub-directory (`truth.yaml`, `map.png`). Marker boards are visual only; free-standing ones get a thin collision post and are moved just clear of the start zone. The CLI warns if the marker list breaks the rules (max 4, below 0.60 m).
 
-## truth.yaml
+## Ground truth rule
 
-`truth.yaml` lists every obstacle, zone and the start pose. It is for the test harness and scoring **only**. The robot stack must never read it: the rules say obstacle locations must not be uploaded. The robot has to find obstacles with its own sensors.
+`truth/truth.yaml` lists every obstacle, zone and the start pose, and `truth/map.png` draws them. They are for the test harness and scoring **only**. The robot stack must never read them: the rules forbid uploading obstacle locations, and the robot has to find obstacles with its own sensors. The CLI prints a warning to that effect on every run.
+
+The installed worlds (`share/cac_sim/worlds/<name>/`) contain no truth. The truth for the default worlds is installed separately as `share/cac_sim/truth/<name>.yaml` and `<name>.png`.
 
 ## Assumptions
 
-Everything the rulebook does not give us (wall height, column position and size, rock heights, marker size, camera positions, and so on) is marked `ASSUMED` in `config/arena.yaml`. Change it there and rebuild; nothing is hard-coded elsewhere. Where the rulebook table and the schematic disagree (berm and target size), the smaller pair is the default.
+Everything the rulebook does not give us (wall height, column position and size, rock heights, crater depth, marker size, camera positions, and so on) is marked `ASSUMED` in `config/arena.yaml`, with where the guess comes from. The CAC arena text is copied from the NASA Lunabotics guidebook, so the Lunabotics Artemis Arena is the reference for the guesses: a square ~0.5 m column near the centre, low walls ~0.5 m, and an optional PVC duct along the walls (`wall.inner_pipe_diameter`, off by default). Change it there and rebuild; nothing is hard-coded elsewhere. Where the rulebook table and the schematic disagree (berm and target size), the smaller pair is the default.
 
 ## Tests
 

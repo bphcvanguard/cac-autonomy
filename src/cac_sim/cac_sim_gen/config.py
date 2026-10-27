@@ -9,7 +9,7 @@ LAYOUT_DIR = PKG_ROOT / 'layouts'
 
 
 def _find_share(rel):
-    """Return a file from the source tree, or from the installed share/ when run after colcon build."""
+    """Return a file from the source tree, or from the installed share/ after colcon build."""
     p = PKG_ROOT / rel
     if p.exists():
         return p
@@ -23,7 +23,22 @@ def _find_share(rel):
 def load_config(path=None):
     path = Path(path) if path else _find_share('config/arena.yaml')
     with open(path) as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    return resolve(cfg)
+
+
+def resolve(cfg, marker_preset=None):
+    """Fill derived keys: markers.list from the chosen preset, column.radius (bounding circle)."""
+    m = cfg.get('markers', {})
+    if 'presets' in m:
+        m['preset'] = marker_preset or m.get('preset')
+        m['list'] = m['presets'][m['preset']]
+    c = cfg['column']
+    if c.get('shape', 'cylinder') == 'box':
+        c['radius'] = 0.5 * (c['size'][0] ** 2 + c['size'][1] ** 2) ** 0.5
+    elif 'size' in c:
+        c['radius'] = c['size'][0] / 2
+    return cfg
 
 
 def load_layout(path_or_name):

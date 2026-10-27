@@ -8,14 +8,16 @@ import math
 
 import numpy as np
 
+from .geometry import crater_params
 from .png import write_png
 
 OBSTACLE_STREAM = 2
 START_STREAM = 3
 EPS = 1e-6
-MAX_ATTEMPTS = 300
-SLALOM_BAND = (2.0, 4.9)      # x range the robot must cross; a share of obstacles is put here
-SLALOM_BIAS = 0.6             # probability an obstacle-zone obstacle is drawn from the band
+MAX_ATTEMPTS = 600
+POSE_REDRAW_EVERY = 100       # hard start poses (facing away, low y) get a fresh pose
+SLALOM_BIAS = 0.7             # probability an obstacle-zone obstacle is drawn from the band
+YAW_BINS = 16
 PLACE_TRIES = 200
 
 
@@ -43,6 +45,15 @@ def _circle_rect_dist(cx, cy, rect):
     return math.hypot(dx, dy)
 
 
+def _extents(cfg, layout):
+    """Full footprint radius per item (boulder r, crater geometry.outer_radius), _items order."""
+    seed = layout.get('seed')
+    out = [b['diameter'] / 2 for b in layout.get('boulders', [])]
+    out += [crater_params(cfg, layout, i, seed)['outer_radius']
+            for i in range(len(layout.get('craters', [])))]
+    return out
+
+
 def _items(layout):
     """All obstacles as (kind, index, x, y, radius)."""
     out = []
@@ -54,6 +65,12 @@ def _items(layout):
 
 
 def _column(cfg):
+    """
+    Return the column as a circle (x, y, r).
+
+    A box column uses its circumscribed circle: conservative, so every obstacle gap and path
+    check stays valid for the real square.
+    """
     col = cfg['column']
     return col['centre'][0], col['centre'][1], col['radius']
 
@@ -78,7 +95,7 @@ def _name(kind, i):
 # ----------------------------------------------------------------------------- start pose
 
 def _pose_interval(cfg, yaw_deg):
-    """Allowed (x_lo, x_hi, y_lo, y_hi) of the robot centre so the rotated footprint fits."""
+    """Return the allowed (x_lo, x_hi, y_lo, y_hi) robot-centre box for a rotated footprint."""
     length, width = cfg['randomiser']['robot_footprint']
     m = cfg['randomiser']['start_pose_margin']
     x0, y0, x1, y1 = cfg['zones']['start']
@@ -93,7 +110,9 @@ def random_start_pose(cfg, rng):
     """Yaw uniform in [-180, 180); position uniform over where the rotated footprint fits.
 
     The footprint (L along heading) must lie inside the start zone shrunk by start_pose_margin.
-    Position is sampled given the yaw; a yaw with no feasible position is resampled.
+    Position is sampled given the yaw; a yaw with no feasible position is resampled. Poses from
+    which the footprint (+ clearance) cannot even turn out of the start zone in an empty arena
+    are rejected too.
     """
     for _ in range(1000):
         yaw = float(rng.uniform(-180.0, 180.0))
@@ -103,14 +122,23 @@ def random_start_pose(cfg, rng):
         # keep 1 mm inside so rounding to mm cannot push the footprint out
         x = float(rng.uniform(xl + 0.001, xh - 0.001))
         y = float(rng.uniform(yl + 0.001, yh - 0.001))
-        return {'x': round(x, 3), 'y': round(y, 3), 'yaw_deg': round(yaw, 2)}
+        pose = {'x': round(x, 3), 'y': round(y, 3), 'yaw_deg': round(yaw, 2)}
+        # the rover must be able to leave the start zone even with nothing in the arena: a pose
+        # jammed against a wall with the clearance margin cannot turn (needs a 3-point turn)
+        empty = {'boulders': [], 'craters': [], 'start_pose': pose}
+        if se2_path_exists(cfg, empty)[0]:
+            return pose
     raise RuntimeError('robot footprint does not fit in the start zone at any yaw')
 
 
 # ----------------------------------------------------------------------------- randomiser
 
 def _sample_obstacle(cfg, rng, kind, zone, placed, col):
-    """Draw one obstacle centre/size in `zone` that clears everything already placed."""
+    """Draw one obstacle in `zone` ('obstacle'|'excavation'|'construction') that clears all.
+
+    Items lie fully inside their zone (crater rim included), clear the start zone by 0.1 m and
+    the other items by min_gap_between_obstacles.
+    """
     rc = cfg['randomiser']
     gap, off = rc['min_gap_between_obstacles'], rc['keep_off_walls']
     w, h = cfg['arena']['size']
@@ -120,21 +148,35 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, col):
     for _ in range(PLACE_TRIES):
         d = float(rng.uniform(*spec['diameter']))
         r = d / 2
-        if zone == 'obstacle':
-            if rng.random() < SLALOM_BIAS:
-                x = float(rng.uniform(*SLALOM_BAND))
-            else:
-                x = float(rng.uniform(off + r, z['excavation'][0]))
+        item = {'diameter': round(d, 3)}
+        if kind == 'boulder':
+            item['height'] = round(float(rng.uniform(*spec['height'])), 3)
+        # crater depth and rim are drawn by geometry.crater_params from the crater's own stream
+        d = item['diameter']
+        r = d / 2
+        if kind == 'crater':
+            tmp = {'craters': [dict(item, position=[0, 0])]}
+            ext = crater_params(cfg, tmp, 0, 0)['outer_radius'] + 0.002
         else:
-            x = float(rng.uniform(z['excavation'][0], w - off - r))
-        y = float(rng.uniform(off + r, h - off - r))
-        if x < off + r or x > w - off - r:
+            ext = r + 0.002
+        ylo, yhi = off + r, h - off - r
+        if zone == 'obstacle':
+            xlo, xhi = off + r, z['excavation'][0] - ext
+            if rng.random() < SLALOM_BIAS:
+                band = rc.get('slalom_band', [2.0, 5.0])
+                xlo, xhi = max(xlo, band[0] + ext), min(xhi, band[1] - ext)
+        elif zone == 'excavation':
+            xlo, xhi = z['excavation'][0] + ext, w - off - r
+        else:
+            xlo, xhi = z['construction'][0] + ext, w - off - r
+            ylo = max(ylo, z['construction'][1] + ext)
+            yhi = min(yhi, z['construction'][3] - ext)
+        if xhi <= xlo or yhi <= ylo:
             continue
-        if zone == 'obstacle' and x >= z['excavation'][0]:
+        x, y = float(rng.uniform(xlo, xhi)), float(rng.uniform(ylo, yhi))
+        if _circle_rect_dist(x, y, z['start']) < ext + 0.1:
             continue
-        if _circle_rect_dist(x, y, z['start']) < r + 0.05:
-            continue
-        if _circle_rect_dist(x, y, z['construction']) < r + 0.05:
+        if zone != 'construction' and _circle_rect_dist(x, y, z['construction']) < ext + 0.05:
             continue
         ok = True
         for (px, py, pr) in placed + [col]:
@@ -143,14 +185,7 @@ def _sample_obstacle(cfg, rng, kind, zone, placed, col):
                 break
         if not ok:
             continue
-        item = {'position': [round(x, 3), round(y, 3)], 'diameter': round(d, 3)}
-        if kind == 'boulder':
-            item['height'] = round(float(rng.uniform(*spec['height'])), 3)
-        else:
-            item['depth'] = round(float(rng.uniform(*spec['depth'])), 3)
-            rim = spec.get('rim_height')
-            if rim:
-                item['rim'] = round(float(rng.uniform(*rim)), 3)
+        item['position'] = [round(x, 3), round(y, 3)]
         return item
     return None
 
@@ -167,11 +202,12 @@ def _one_attempt(cfg, rng):
         ('crater', 'excavation'): int(rng.integers(c['in_excavation_zone'][0],
                                                    c['in_excavation_zone'][1] + 1)),
     }
-    # obstacle zone first (it decides the route), interleaved so both kinds spread
+    lo, hi = b.get('in_construction_zone', [0, 0])
+    n[('boulder', 'construction')] = int(rng.integers(lo, hi + 1))
+    n[('crater', 'construction')] = 0
     jobs = []
-    for zone in ('obstacle', 'excavation'):
-        nb, nc = n[('boulder', zone)], n[('crater', zone)]
-        seq = ['boulder'] * nb + ['crater'] * nc
+    for zone in ('obstacle', 'excavation', 'construction'):
+        seq = ['boulder'] * n[('boulder', zone)] + ['crater'] * n[('crater', zone)]
         order = rng.permutation(len(seq))
         jobs += [(seq[i], zone) for i in order]
     col = _column(cfg)
@@ -185,31 +221,55 @@ def _one_attempt(cfg, rng):
     return boulders, craters
 
 
-def random_layout(cfg, seed, stats=None):
-    """Seeded random layout that passes check_layout(strict=True), path included.
+def _reason(issue):
+    if 'straight' in issue:
+        return 'no_slalom'
+    if 'SE(2)' in issue:
+        return 'se2_path'
+    if 'no path' in issue:
+        return 'disc_path'
+    return 'rules'
 
-    `stats` (optional dict) receives {'attempts': n, 'path_rejects': k}.
+
+def random_layout(cfg, seed, stats=None):
+    """Seeded random layout that passes check_layout(strict=True), paths included.
+
+    `stats` (optional dict) receives {'attempts': n, 'reasons': {reason: rejects}}; reasons are
+    placement / rules / no_slalom / disc_path / se2_path.
     """
     rng = np.random.default_rng([seed, OBSTACLE_STREAM])
-    pose = random_start_pose(cfg, np.random.default_rng([seed, START_STREAM]))
-    path_rejects = 0
+    pose_rng = np.random.default_rng([seed, START_STREAM])
+    pose = random_start_pose(cfg, pose_rng)
+    reasons = {}
+
+    def reject(why):
+        reasons[why] = reasons.get(why, 0) + 1
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
+        if attempt % POSE_REDRAW_EVERY == 0:
+            pose = random_start_pose(cfg, pose_rng)
+            reject('pose_redraw')
         res = _one_attempt(cfg, rng)
         if res is None:
+            reject('placement')
             continue
         layout = {'name': f'seed_{seed:04d}', 'seed': int(seed), 'boulders': res[0],
                   'craters': res[1], 'start_pose': dict(pose)}
-        issues = check_layout(cfg, layout, strict=True)
-        if not issues:
-            if stats is not None:
-                stats.update(attempts=attempt, path_rejects=path_rejects)
-            return layout
-        if any('no path' in s for s in issues):
-            path_rejects += 1
+        issues = check_layout(cfg, layout, strict=True, paths=False)
+        if issues:
+            reject(_reason(issues[0]))
+            continue
+        issues = _path_issues(cfg, layout)
+        if issues:
+            reject(_reason(issues[0]))
+            continue
+        if stats is not None:
+            stats.update(attempts=attempt, reasons=reasons)
+        return layout
     raise RuntimeError(f'no valid layout for seed {seed} in {MAX_ATTEMPTS} attempts')
 
 
-# ----------------------------------------------------------------------------- path check
+# ----------------------------------------------------------------------------- disc path check
 
 def _blocked_grid(cfg, layout, inflate, res):
     w, h = cfg['arena']['size']
@@ -305,13 +365,13 @@ def _shortcut(pts, blocked, res):
 
 
 def path_exists(cfg, layout, inflate=None, resolution=0.05):
-    """Can the robot get from the start zone to the excavation zone?
+    """Check disc reachability: can a round robot go from the start to the excavation zone.
 
     Occupancy grid at `resolution` (5 cm). Boulders, craters, the column and the walls are
     inflated by `inflate` metres, default = robot half-width + clearance (inscribed-radius
-    check: the robot is treated as a disc, valid because a rover can turn in place). A 1.5 m long
-    robot turning in a tight spot sweeps a disc of radius ~0.84 m (half the diagonal) plus
-    clearance; pass inflate=0.95 for that conservative variant. Returns (ok, polyline of (x, y)).
+    check, a fast prefilter). It ignores the 1.5 m length: use se2_path_exists for the real
+    footprint that has to turn. Pass inflate=0.95 for a conservative turning-disc variant.
+    Returns (ok, polyline of (x, y)).
     """
     if inflate is None:
         inflate = _default_inflate(cfg)
@@ -331,28 +391,212 @@ def _bottleneck_width(cfg, layout, res=0.05):
     return 2 * lo
 
 
+# ----------------------------------------------------------------------------- SE(2) check
+
+def _box_circle_blocked(gx, gy, cx, cy, r, c, s, a, b):
+    """Return True where a robot box (half extents a, b, yaw cos/sin c, s) hits the circle."""
+    dx, dy = cx - gx, cy - gy
+    u = c * dx + s * dy
+    v = -s * dx + c * dy
+    return np.hypot(np.maximum(np.abs(u) - a, 0.0), np.maximum(np.abs(v) - b, 0.0)) < r
+
+
+def _se2_blocked(cfg, layout, yaw_bins, res):
+    """Configuration-space obstacle (yaw_bins, nx, ny) at `res`, conservative (any-blocked)."""
+    length, width = cfg['randomiser']['robot_footprint']
+    clr = cfg['randomiser']['clearance']
+    a, b = length / 2 + clr, width / 2 + clr
+    w, h = cfg['arena']['size']
+    fs = 0.05
+    fnx, fny = int(round(w / fs)), int(round(h / fs))
+    fx = (np.arange(fnx) + 0.5) * fs
+    fy = (np.arange(fny) + 0.5) * fs
+    reach = math.hypot(a, b)
+    circles = [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)]
+    half = yaw_bins // 2
+    out = np.zeros((yaw_bins, fnx, fny), bool)
+    for k in range(half):                       # a rectangle is symmetric under 180 deg
+        th = 2 * math.pi * k / yaw_bins
+        c, s = math.cos(th), math.sin(th)
+        hx, hy = abs(c) * a + abs(s) * b, abs(s) * a + abs(c) * b
+        m = np.zeros((fnx, fny), bool)
+        m |= (fx < hx)[:, None] | (fx > w - hx)[:, None]
+        m |= (fy < hy)[None, :] | (fy > h - hy)[None, :]
+        for cx, cy, r in circles:
+            R = r + reach
+            i0, i1 = max(int((cx - R) / fs), 0), min(int((cx + R) / fs) + 2, fnx)
+            j0, j1 = max(int((cy - R) / fs), 0), min(int((cy + R) / fs) + 2, fny)
+            if i0 >= i1 or j0 >= j1:
+                continue
+            gx, gy = np.meshgrid(fx[i0:i1], fy[j0:j1], indexing='ij')
+            m[i0:i1, j0:j1] |= _box_circle_blocked(gx, gy, cx, cy, r, c, s, a, b)
+        out[k] = m
+        out[k + half] = m
+    f = int(round(res / fs))
+    if f > 1:
+        out = out.reshape(yaw_bins, fnx // f, f, fny // f, f).any(axis=(2, 4))
+    return out
+
+
+def _shift_or(dst, src, di, dj, bins):
+    """dst[k, a, b] |= src[k, a - di, b - dj] for k in bins (in place, clipped at borders)."""
+    nx, ny = src.shape[1], src.shape[2]
+    a0, a1 = max(di, 0), nx + min(di, 0)
+    b0, b1 = max(dj, 0), ny + min(dj, 0)
+    dst[bins, a0:a1, b0:b1] |= src[bins, a0 - di:a1 - di, b0 - dj:b1 - dj]
+
+
+def _allowed_bins(di, dj, yaw_bins, holonomic):
+    """Yaw bins in which a move (di, dj) is allowed: along the heading, forwards or backwards."""
+    if holonomic:
+        return np.arange(yaw_bins)
+    ang = math.degrees(math.atan2(dj, di))
+    step = 360.0 / yaw_bins
+    ok = []
+    for k in range(yaw_bins):
+        d = (ang - k * step) % 180.0
+        if min(d, 180.0 - d) <= step + 1e-6:
+            ok.append(k)
+    return np.array(ok)
+
+
+def se2_path_exists(cfg, layout, yaw_bins=YAW_BINS, resolution=0.1, holonomic=False):
+    """Check SE(2) reachability of the real footprint (L x W + clearance) that must turn.
+
+    State = (x, y, yaw bin). Collision is a rotated rectangle (half extents L/2 + c, W/2 + c)
+    vs every circle and the walls, computed on a 5 cm grid and reduced conservatively to
+    `resolution` (10 cm). Moves: 8-neighbour in the same yaw bin; in-place rotation to the
+    adjacent bin if the cell is free in both bins (standard approximation). Unless
+    holonomic=True a translation must lie within one bin step (22.5 deg) of the heading or its
+    reverse, so the rover cannot crab sideways. Start = the actual
+    start pose (forced free: the robot is physically there). Goal = robot centre
+    x >= excavation x_min - L/2 (any part of the robot enters the excavation zone).
+    Returns (ok, [(x, y, yaw_deg)] waypoints, ~0.5 m apart and at every yaw change).
+    """
+    length = cfg['randomiser']['robot_footprint'][0]
+    blocked = _se2_blocked(cfg, layout, yaw_bins, resolution)
+    free = ~blocked
+    nb, nx, ny = free.shape
+    sp = layout['start_pose']
+    si = min(max(int(sp['x'] / resolution), 0), nx - 1)
+    sj = min(max(int(sp['y'] / resolution), 0), ny - 1)
+    step_deg = 360.0 / yaw_bins
+    sk = int(round((sp['yaw_deg'] % 360.0) / step_deg)) % yaw_bins
+    free[sk, si, sj] = True
+    gi = int(math.ceil((cfg['zones']['excavation'][0] - length / 2) / resolution - 0.5))
+    goal = np.zeros_like(free)
+    goal[:, gi:, :] = True
+    dist = np.full(free.shape, -1, np.int32)
+    dist[sk, si, sj] = 0
+    frontier = np.zeros_like(free)
+    frontier[sk, si, sj] = True
+    reached = frontier.copy()
+    steps = 0
+    hit = None
+    moves = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+    allowed = {m: _allowed_bins(m[0], m[1], nb, holonomic) for m in moves}
+    while frontier.any():
+        steps += 1
+        new = np.zeros_like(free)
+        for di, dj in moves:
+            _shift_or(new, frontier, di, dj, allowed[(di, dj)])
+        new |= np.roll(frontier, 1, axis=0)
+        new |= np.roll(frontier, -1, axis=0)
+        new &= free
+        new &= ~reached
+        dist[new] = steps
+        reached |= new
+        frontier = new
+        g = new & goal
+        if g.any():
+            hit = tuple(int(v) for v in np.argwhere(g)[0])
+            break
+    if hit is None:
+        return False, []
+    chain = [hit]
+    while dist[chain[-1]] > 0:
+        k, i, j = chain[-1]
+        d = dist[k, i, j] - 1
+        nxt = None
+        for dk, di, dj in [(0, a, b) for a, b in moves] + [(1, 0, 0), (-1, 0, 0)]:
+            kk, ii, jj = (k + dk) % nb, i + di, j + dj
+            if dk == 0 and k not in allowed[(-di, -dj)]:
+                continue
+            if 0 <= ii < nx and 0 <= jj < ny and dist[kk, ii, jj] == d:
+                nxt = (kk, ii, jj)
+                break
+        chain.append(nxt)
+    chain.reverse()
+    pts = []
+    last_k, last_n = None, 0
+    for n, (k, i, j) in enumerate(chain):
+        if last_k is None or k != last_k or n - last_n >= 5 or n == len(chain) - 1:
+            yaw = k * step_deg
+            pts.append((round((i + 0.5) * resolution, 3), round((j + 0.5) * resolution, 3),
+                        round(yaw - 360.0 if yaw >= 180.0 else yaw, 1)))
+            last_k, last_n = k, n
+    return True, pts
+
+
+def _straight_corridor(cfg, layout):
+    """Return y of a clear straight eastward corridor (W + 2 clearance wide), else None.
+
+    Tries start y in [W/2, start_h - W/2]. Returns None when every straight corridor is blocked.
+    """
+    rc = cfg['randomiser']
+    width = rc['robot_footprint'][1]
+    half = width / 2 + rc['clearance']
+    z = cfg['zones']
+    circles = [(x, y, r) for _, _, x, y, r in _items(layout)] + [_column(cfg)]
+    x_to = z['excavation'][0]
+    for y0 in np.arange(width / 2, z['start'][3] - width / 2 + 1e-9, 0.025):
+        if not any(cx - r < x_to and abs(cy - y0) < half + r for cx, cy, r in circles):
+            return float(y0)
+    return None
+
+
+def _path_issues(cfg, layout):
+    ok, _ = path_exists(cfg, layout)
+    if not ok:
+        return ['no path from the start zone to the excavation zone for a round robot (disc)']
+    ok, _ = se2_path_exists(cfg, layout)
+    if not ok:
+        return ['no path for the 1.5 x 0.75 m footprint turning (SE(2)) to the excavation zone']
+    return []
+
+
 # ----------------------------------------------------------------------------- checker
 
-def check_layout(cfg, layout, strict=True):
+def _box_hits_circle(cfg, pose, cx, cy, r):
+    length, width = cfg['randomiser']['robot_footprint']
+    th = math.radians(pose['yaw_deg'])
+    return bool(_box_circle_blocked(np.array(pose['x']), np.array(pose['y']), cx, cy, r,
+                                    math.cos(th), math.sin(th), length / 2, width / 2))
+
+
+def check_layout(cfg, layout, strict=True, paths=True):
     """Return a list of human-readable violations (empty = valid).
 
     strict=True checks every rule in arena.yaml. strict=False reports only hard physical
-    problems: overlapping obstacles, out of the arena, start footprint outside the start zone,
-    no path. Column conflicts are strict-only: the column position is ASSUMED, not measured.
+    problems: overlapping obstacles or column, out of the arena, start footprint not in the start
+    zone or on an obstacle, no path. paths=False skips the (slower) path checks.
     """
     v = []
     z = cfg['zones']
     rc = cfg['randomiser']
     w, h = cfg['arena']['size']
     items = _items(layout)
+    exts = _extents(cfg, layout)
     col = _column(cfg)
 
-    # out of arena (hard)
-    for kind, i, x, y, r in items:
-        if x - r < -EPS or y - r < -EPS or x + r > w + EPS or y + r > h + EPS:
+    for (kind, i, x, y, r), e in zip(items, exts):
+        ee = e if strict else r          # the soft rim may poke over the wall; the core may not
+        if x - ee < -EPS or y - ee < -EPS or x + ee > w + EPS or y + ee > h + EPS:
             v.append(f'{_name(kind, i)} extends outside the arena')
+        g = math.hypot(x - col[0], y - col[1]) - r - col[2]
+        if g < -EPS:
+            v.append(f'{_name(kind, i)} overlaps the column by {-g:.2f} m')
 
-    # overlaps (hard) and gaps (strict)
     for a in range(len(items)):
         for b in range(a + 1, len(items)):
             ka, ia, xa, ya, ra = items[a]
@@ -365,21 +609,33 @@ def check_layout(cfg, layout, strict=True):
                          f'< {rc["min_gap_between_obstacles"]} m')
 
     if strict:
-        for kind, i, x, y, r in items:
+        ex0 = z['excavation'][0]
+        for (kind, i, x, y, r), e in zip(items, exts):
             g = math.hypot(x - col[0], y - col[1]) - r - col[2]
-            if g < rc['min_gap_between_obstacles'] - EPS:
+            if 0 <= g < rc['min_gap_between_obstacles'] - EPS:
                 v.append(f'gap {g:.2f} m between {_name(kind, i)} and the column '
                          f'< {rc["min_gap_between_obstacles"]} m')
             dw = min(x - r, w - x - r, y - r, h - y - r)
             if dw < rc['keep_off_walls'] - EPS:
                 v.append(f'{_name(kind, i)} is {dw:.2f} m from a wall '
                          f'(< {rc["keep_off_walls"]} m)')
-            if _circle_rect_dist(x, y, z['start']) < r - EPS:
+            zone = _zone_of(cfg, x, y)
+            if _circle_rect_dist(x, y, z['start']) < e - EPS:
                 v.append(f'{_name(kind, i)} intrudes into the start zone')
-            if _circle_rect_dist(x, y, z['construction']) < r - EPS:
+            if zone != 'construction' and _circle_rect_dist(x, y, z['construction']) < e - EPS:
                 v.append(f'{_name(kind, i)} intrudes into the construction zone')
+            if zone == 'obstacle' and x + e > ex0 + EPS:
+                v.append(f'{_name(kind, i)} straddles the obstacle/excavation boundary '
+                         f'(extent incl. rim reaches x = {x + e:.2f})')
+            if zone == 'excavation' and x - e < ex0 - EPS:
+                v.append(f'{_name(kind, i)} straddles the obstacle/excavation boundary '
+                         f'(extent incl. rim reaches x = {x - e:.2f})')
+            if zone == 'construction':
+                cz = z['construction']
+                if x - e < cz[0] - EPS or y - e < cz[1] - EPS or x + e > cz[2] + EPS \
+                        or y + e > cz[3] + EPS:
+                    v.append(f'{_name(kind, i)} straddles the construction zone boundary')
 
-        # counts per zone
         def count(kind_, zone):
             return sum(1 for k, _, x, y, _r in items
                        if k == kind_ and _zone_of(cfg, x, y) == zone)
@@ -394,21 +650,31 @@ def check_layout(cfg, layout, strict=True):
             lo, hi = spec['in_excavation_zone']
             if not lo <= n <= hi:
                 v.append(f'{n} {plural} in the excavation zone (allowed {lo}..{hi})')
-            for k, zone in ((kind, 'start'), (kind, 'construction')):
-                if count(k, zone):
-                    v.append(f'{count(k, zone)} {plural} centred in the {zone} zone')
+            n = count(kind, 'construction')
+            lo, hi = spec.get('in_construction_zone', [0, 0])
+            if not lo <= n <= hi:
+                v.append(f'{n} {plural} in the construction zone (allowed {lo}..{hi})')
+            if count(kind, 'start'):
+                v.append(f'{count(kind, "start")} {plural} centred in the start zone')
 
-        # sizes vs ranges
         for i, b in enumerate(layout.get('boulders', [])):
             _range(v, f'boulder {i} diameter', b['diameter'], cfg['boulders']['diameter'])
             _range(v, f'boulder {i} height', b['height'], cfg['boulders']['height'])
         for i, c in enumerate(layout.get('craters', [])):
             _range(v, f'crater {i} diameter', c['diameter'], cfg['craters']['diameter'])
-            _range(v, f'crater {i} depth', c['depth'], cfg['craters']['depth'])
-            if 'rim' in c:
-                _range(v, f'crater {i} rim', c['rim'], cfg['craters']['rim_height'])
+            if 'depth_ratio' in c:
+                _range(v, f'crater {i} depth_ratio', c['depth_ratio'],
+                       cfg['craters']['depth_ratio'])
+            if 'depth' in c:
+                lo, hi = (r * c['diameter'] for r in cfg['craters']['depth_ratio'])
+                _range(v, f'crater {i} depth', c['depth'], [lo, hi])
 
-    # start pose footprint (hard: inside the zone; strict: inside the shrunk zone)
+        if rc.get('require_slalom', False):
+            y0 = _straight_corridor(cfg, layout)
+            if y0 is not None:
+                v.append(f'a straight eastward corridor is clear at y = {y0:.2f} m '
+                         f'(no slalom needed)')
+
     sp = layout.get('start_pose')
     if not sp:
         v.append('no start pose')
@@ -420,10 +686,12 @@ def check_layout(cfg, layout, strict=True):
                 v.append('start footprint not inside the start zone' +
                          (f' shrunk by {m} m' if strict else ''))
                 break
+        for kind, i, x, y, r in items + [('column', 0, col[0], col[1], col[2])]:
+            if _box_hits_circle(cfg, sp, x, y, r):
+                v.append(f'start footprint overlaps {_name(kind, i)}')
 
-    ok, _ = path_exists(cfg, layout)
-    if not ok:
-        v.append('no path from the start zone to the excavation zone for the robot footprint')
+    if paths:
+        v += _path_issues(cfg, layout)
     return v
 
 
@@ -444,15 +712,21 @@ def truth(cfg, layout):
                           'radius': float(b['diameter']) / 2, 'height': float(b['height'])})
     for c in layout.get('craters', []):
         pos = [float(c['position'][0]), float(c['position'][1])]
+        cp = crater_params(cfg, layout, len(obstacles) - len(layout.get('boulders', [])),
+                           layout.get('seed'))
         obstacles.append({'type': 'crater', 'position': pos,
-                          'radius': float(c['diameter']) / 2, 'depth': float(c['depth'])})
+                          'radius': float(c['diameter']) / 2, 'depth': float(cp['depth_eff']),
+                          'max_slope_deg': float(cp['max_slope_deg_eff']),
+                          'rim': float(cp['rim']), 'outer_radius': float(cp['outer_radius'])})
     ok, path = path_exists(cfg, layout)
     res = {'exists': bool(ok), 'path': [[float(x), float(y)] for x, y in path],
            'inflate': float(_default_inflate(cfg))}
     if ok:
         res['bottleneck_width'] = round(float(_bottleneck_width(cfg, layout)), 3)
+    ok2, path2 = se2_path_exists(cfg, layout)
     col = cfg['column']
     sp = layout['start_pose']
+    n_con = sum(1 for k, _, x, y, _r in _items(layout) if _zone_of(cfg, x, y) == 'construction')
     return {
         'name': layout.get('name'),
         'seed': layout.get('seed'),
@@ -461,10 +735,16 @@ def truth(cfg, layout):
                        'size': [float(a) for a in cfg['berm']['target_size']],
                        'size_schematic': [float(a) for a in cfg['berm']['target_size_schematic']]},
         'column': {'position': [float(a) for a in col['centre']],
-                   'radius': float(col['radius']), 'height': float(col['height'])},
+                   'shape': col.get('shape', 'cylinder'),
+                   'size': [float(a) for a in col.get('size', [2 * col['radius']] * 2)],
+                   'yaw_deg': float(col.get('yaw_deg', 0.0)),
+                   'bounding_radius': float(col['radius']), 'height': float(col['height'])},
         'obstacles': obstacles,
+        'obstacles_in_construction_zone': int(n_con),
         'start_pose': {'x': float(sp['x']), 'y': float(sp['y']), 'yaw_deg': float(sp['yaw_deg'])},
         'path_exists': res,
+        'se2_path_exists': bool(ok2),
+        'se2_path': [[float(a), float(b), float(c)] for a, b, c in path2],
     }
 
 
@@ -513,6 +793,14 @@ class _Canvas:
         for x, y in pts:
             xi, yi = int(round(x)), int(round(y))
             self.img[max(yi - hw, 0):yi - hw + width, max(xi - hw, 0):xi - hw + width] = color
+
+    def box(self, cx, cy, sx, sy, yaw_deg, color, inset=0.0):
+        """Fill a rotated rectangle (world metres), shrunk by `inset` on every side."""
+        c, s_ = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
+        dx, dy = self.gx - cx, self.gy - cy
+        u, v = c * dx + s_ * dy, -s_ * dx + c * dy
+        m = (np.abs(u) <= sx / 2 - inset) & (np.abs(v) <= sy / 2 - inset)
+        self.arena[m] = color
 
     def rect(self, rect, color, width=2, dash=None):
         x0, y0, x1, y1 = rect
@@ -567,15 +855,27 @@ def render_map(cfg, layout, png_path, path=None, scale=100):
         r = b['diameter'] / 2
         cv.disc(b['position'][0], b['position'][1], r, (60, 60, 60))
         cv.disc(b['position'][0], b['position'][1], r - 0.02, (140, 140, 145))
+    col = cfg['column']
     cx, cy, cr = _column(cfg)
-    cv.disc(cx, cy, cr, (30, 30, 30))
-    cv.disc(cx, cy, cr - 0.03, (90, 90, 100))
+    if col.get('shape', 'cylinder') == 'box':
+        yaw = col.get('yaw_deg', 0.0)
+        cv.box(cx, cy, *col['size'], yaw, (30, 30, 30))
+        cv.box(cx, cy, *col['size'], yaw, (90, 90, 100), inset=0.03)
+    else:
+        cv.disc(cx, cy, cr, (30, 30, 30))
+        cv.disc(cx, cy, cr - 0.03, (90, 90, 100))
     # path
     if path:
-        for p, q in zip(path[:-1], path[1:]):
-            cv.line(p, q, (230, 40, 160), 3)
+        # path points are (x, y) or (x, y, yaw_deg); with yaw the footprint is drawn there
         for p in path:
-            x, y = cv.px(*p)
+            if len(p) > 2:
+                pts = _footprint_corners(cfg, {'x': p[0], 'y': p[1], 'yaw_deg': p[2]})
+                for i in range(4):
+                    cv.line(pts[i], pts[(i + 1) % 4], (240, 150, 200), 1)
+        for p, q in zip(path[:-1], path[1:]):
+            cv.line(p[:2], q[:2], (230, 40, 160), 3)
+        for p in path:
+            x, y = cv.px(p[0], p[1])
             cv.img[int(y) - 3:int(y) + 4, int(x) - 3:int(x) + 4] = (230, 40, 160)
     # robot footprint + heading arrow
     sp = layout.get('start_pose')

@@ -15,9 +15,9 @@ Output for one layout `<name>` is a self-contained directory:
   meshes/terrain_collision.obj   coarser copy for physics
   meshes/rock_<i>.obj       one mesh per boulder
   materials/sand.png, materials/rock.png   generated textures
-  truth.yaml                ground truth: obstacles, zones, start pose (for test harness/scoring ONLY;
+  truth/truth.yaml          ground truth: obstacles, zones, start pose (for test harness/scoring ONLY;
                             never read by the robot stack: "obstacle locations must not be uploaded")
-  map.png                   top-down picture of the layout, for briefings
+  truth/map.png             top-down picture of the layout, for briefings
 ```
 
 ## Layout data (python dict == YAML)
@@ -30,7 +30,8 @@ craters:  [{position: [x, y], diameter: m, depth: m}]     # optional per crater:
 start_pose: {x: m, y: m, yaw_deg: deg}                    # robot base centre, in the start zone
 ```
 
-The column comes from `arena.yaml`, never from the layout (it does not move between attempts).
+The column comes from `arena.yaml`, never from the layout (it does not move between attempts). A box
+column is treated as its circumscribed circle in layout checks (conservative).
 
 ## Modules (`cac_sim_gen/`, numpy + PyYAML only, Python 3.10+)
 

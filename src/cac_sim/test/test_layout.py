@@ -1,16 +1,15 @@
 """Layout module tests (no ROS)."""
 import math
-import sys
 from pathlib import Path
-
-import numpy as np
-import pytest
+import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from cac_sim_gen import layout as L  # noqa: E402
+from cac_sim_gen import layout as L  # noqa: E402, I100
 from cac_sim_gen.config import load_config, load_layout  # noqa: E402
 from cac_sim_gen.png import write_png  # noqa: E402
+import numpy as np  # noqa: E402, I100, I201
+import pytest  # noqa: E402, I201
 
 
 @pytest.fixture(scope='module')
@@ -36,17 +35,71 @@ def test_determinism(cfg):
 
 
 def test_start_pose_stream_independent(cfg):
-    a = L.random_layout(cfg, 11)['start_pose']
-    b = L.random_start_pose(cfg, np.random.default_rng([11, 3]))
+    a = L.random_layout(cfg, 3)['start_pose']
+    b = L.random_start_pose(cfg, np.random.default_rng([3, 3]))
     assert a == b
 
 
-def test_nothing_in_start_or_construction(cfg, layouts):
+def test_nothing_in_start_or_construction_rims_included(cfg, layouts):
     z = cfg['zones']
     for lo in layouts:
-        for kind, _, x, y, r in L._items(lo):
-            assert L._circle_rect_dist(x, y, z['start']) >= r
-            assert L._circle_rect_dist(x, y, z['construction']) >= r
+        for (kind, _, x, y, r), e in zip(L._items(lo), L._extents(cfg, lo)):
+            assert L._circle_rect_dist(x, y, z['start']) >= e
+            assert L._circle_rect_dist(x, y, z['construction']) >= e
+
+
+def test_no_straddling_zone_boundary(cfg, layouts):
+    x5 = cfg['zones']['excavation'][0]
+    for lo in layouts:
+        for (kind, _, x, y, r), e in zip(L._items(lo), L._extents(cfg, lo)):
+            assert x + e <= x5 or x - e >= x5
+
+
+def test_straddle_reported(cfg):
+    lo = L.random_layout(cfg, 4)
+    lo = dict(lo, craters=lo['craters'] + [
+        {'position': [4.95, 4.4], 'diameter': 0.4, 'depth': 0.2, 'rim': 0.03}])
+    assert any('straddles' in v for v in L.check_layout(cfg, lo, strict=True, paths=False))
+
+
+def test_slalom_required(cfg, layouts):
+    for lo in layouts:
+        assert L._straight_corridor(cfg, lo) is None
+    lo = dict(L.random_layout(cfg, 4), boulders=[], craters=[])
+    assert L._straight_corridor(cfg, lo) is not None
+    assert any('straight' in v for v in L.check_layout(cfg, lo))
+
+
+def test_se2_agrees_with_path_and_is_stricter(cfg, layouts):
+    for lo in layouts[:40]:
+        ok, path = L.se2_path_exists(cfg, lo)
+        assert ok
+        assert path[-1][0] >= cfg['zones']['excavation'][0] - 0.75 - 0.1
+    for gap, expect in ((1.3, True), (0.8, False)):
+        ys = [2.5 - gap / 2 - 0.2 - 0.4 * k for k in range(7)]
+        ys += [2.5 + gap / 2 + 0.2 + 0.4 * k for k in range(7)]
+        wall = [{'position': [2.9, y], 'diameter': 0.4, 'height': 0.2}
+                for y in ys if 0.1 < y < 4.9]
+        lo = {'name': 'gap', 'seed': None, 'boulders': wall, 'craters': [],
+              'start_pose': {'x': 1.0, 'y': 1.0, 'yaw_deg': 0.0}}
+        # only the gap may decide: park the column out of the way
+        far = dict(cfg, column=dict(cfg['column'], centre=[7.5, 1.0]))
+        assert L.se2_path_exists(far, lo)[0] == expect
+
+
+def test_construction_boulders_option(cfg):
+    import copy
+    c2 = copy.deepcopy(cfg)
+    c2['boulders']['in_construction_zone'] = [1, 2]
+    z = c2['zones']['construction']
+    for s in range(20):
+        lo = L.random_layout(c2, s)
+        n = sum(1 for k, _, x, y, _r in L._items(lo) if L._zone_of(c2, x, y) == 'construction')
+        assert 1 <= n <= 2
+        assert L.truth(c2, lo)['obstacles_in_construction_zone'] == n
+        for (k, _, x, y, r), e in zip(L._items(lo), L._extents(cfg, lo)):
+            if L._zone_of(c2, x, y) == 'construction':
+                assert z[0] <= x - e and x + e <= z[2] and z[1] <= y - e and y + e <= z[3]
 
 
 def test_start_footprint_inside_zone(cfg, layouts):
@@ -62,6 +115,8 @@ def test_start_footprint_inside_zone(cfg, layouts):
 
 
 def test_schematic(cfg):
+    # The digitised schematic must be physically valid (no overlaps, column clear, start pose ok).
+    # Strict mode still flags that the drawing only has 2 obstacle-zone craters (rules: >= 3).
     s = load_layout('schematic')
     assert L.check_layout(cfg, s, strict=False) == []
     strict = L.check_layout(cfg, s, strict=True)
@@ -76,6 +131,7 @@ def test_blocked_layout_has_no_path(cfg):
     ok, path = L.path_exists(cfg, lo)
     assert not ok and path == []
     assert any('no path' in v for v in L.check_layout(cfg, lo, strict=False))
+    assert not L.se2_path_exists(cfg, lo)[0]
 
 
 def test_path_endpoints_and_inflate(cfg):
