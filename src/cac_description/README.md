@@ -3,7 +3,7 @@
 
 URDF of the **old Vanguard rover**: a six-wheel rocker-bogie with skid-steer and no steering joints.
 It is generated from the team's CAD (`NEW JOINTS KESHAV ASSEMBLY.step`, 28 Oct 2026) by `tools/prep_keshav.py` and `tools/build_urdf.py`.
-In that file **only the robot's right side has the new joints**, so the left side is rebuilt as an exact mirror of the right (`--mirror-from`). The rods, joints, wheels and pivots are mirrored; the body and the diff bar are untouched.
+In that file **only the robot's right side has the new joints**, so the left side is rebuilt as an exact mirror of the right (`--mirror-from`). The rods, joints, wheels and wheel-side parts are mirrored. The body and the diff bar are untouched, and so are the pivot bolts and screws (they are body parts), so those stay one-sided.
 Frames follow REP-103/105: `base_footprint → base_link → …`, with x forward, y left, z up. Units are metres and kg.
 
 ```bash
@@ -62,7 +62,7 @@ The rover is placed at the layout's start pose in the start zone. Its meshes are
 | Steel | pivot screws and pins | 7850 kg/m³ |
 | ASSUMED | drive motors (about 0.6 kg each), wheels (1.0 kg each), body (4.6 kg) | see `MATERIAL_DENSITY` in `tools/build_urdf.py` |
 
-The total comes out at **21.0 kg**.
+The total comes out at **20.8 kg**.
 
 Once the rover has been weighed, rebuild with `--total-mass <KG>`. That keeps each part's share of the mass and scales every inertia to match.
 Update `MATERIAL_DENSITY` when the real tube size, PLA infill, wheel material and motor weights are known.
@@ -101,11 +101,11 @@ To run the full model on Bullet, start Gazebo with `--physics-engine gz-physics-
 
 - **Collision shapes:**
   - Wheels are exact cylinders.
-  - Every solid part of the body, rockers, bogies and diff bar over 15 cm³ is an oriented bounding box (39 boxes).
+  - Every solid part of the body, rockers, bogies and diff bar over 15 cm³ is a box (62 boxes in all). Each part gets the smaller of its oriented (PCA) box and its axis-aligned box, and large hollow parts such as the body frame are split into several boxes, so the collision envelope stays inside the visual one (0.733 m wide, no lower than the visual bottom).
   - Pins and bolts have no collision.
   - The full meshes are for visuals only: using them as collisions ran the arena at 0.05× real time.
 - **No drive plugin is included.** The skid-steer controller belongs to the Platform pod.
-- **Drive setup measured in the arena:** wheel separation 0.57 m and wheel radius 0.11 m. The skid-steer controller belongs to the Platform pod; see `cac_sim`'s README, "How the sand drives".
+- **Drive setup measured in the arena:** wheel separation 0.647 m and wheel radius 0.11 m. The skid-steer controller belongs to the Platform pod; see `cac_sim`'s README, "How the sand drives".
 
 ## Regenerating from the CAD
 
@@ -127,7 +127,7 @@ flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD tools/ins
 ## Open items
 
 - **Total mass:** to be measured. Rebuild with `--total-mass`.
-- **Real stance pitch:** does the real body sit nose-down 6° on flat ground?
+- **Real stance pitch:** the model sits 0.5° nose-down on flat ground. Check that against the real rover.
 - **Sensors:** none are mounted yet. Perception adds the camera/LiDAR links and their extrinsics here.
 - **Envelope:** 0.68 m tall standing, so it is under the 0.75 m stowed height. It is 0.7505 m wide with the mirrored side, which is 0.5 mm over 0.75 m. Measure the real rover.
 - **Left side:** it is a mirror of the right until the CAD's left side has the new joints too. Once it has, rebuild without `--mirror-from`.

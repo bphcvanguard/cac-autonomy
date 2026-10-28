@@ -125,3 +125,89 @@ def test_material_names_unique(path):
     """Reject duplicate material names: urdfdom (gz sdf, RViz) refuses such a URDF."""
     names = [m.get('name') for m in ET.parse(path).getroot().findall('material')]
     assert len(names) == len(set(names))
+
+
+def _mimic(robot, joint):
+    return next(float(m.get('multiplier')) for j in robot.findall('joint')
+                if j.get('name') == joint for m in j.findall('mimic'))
+
+
+def test_mimic_multipliers_and_signs(robot):
+    """Rockers turn opposite ways (left = -1 x right); the diff bar follows the right rocker."""
+    mimics = {j.get('name'): j.find('mimic') for j in robot.findall('joint')
+              if j.find('mimic') is not None}
+    assert set(mimics) == {'left_rocker_joint', 'diff_bar_joint'}
+    assert mimics['left_rocker_joint'].get('joint') == 'right_rocker_joint'
+    assert mimics['diff_bar_joint'].get('joint') == 'right_rocker_joint'
+    assert _mimic(robot, 'left_rocker_joint') == pytest.approx(-1.0)
+    assert 0.35 <= _mimic(robot, 'diff_bar_joint') <= 0.5
+
+
+def test_left_right_symmetry(robot):
+    tf = _zero_pose(robot)
+    links = {ln.get('name'): ln for ln in robot.findall('link')}
+    for name, ln in links.items():
+        if not name.startswith('left_'):
+            continue
+        other = links['right_' + name[len('left_'):]]
+        m1 = float(ln.find('inertial/mass').get('value'))
+        m2 = float(other.find('inertial/mass').get('value'))
+        assert m1 == pytest.approx(m2, abs=1e-3), name
+        a, b = tf[name][:3, 3], tf['right_' + name[len('left_'):]][:3, 3]
+        assert a[0] == pytest.approx(b[0], abs=1e-3), name
+        assert a[1] == pytest.approx(-b[1], abs=1e-3), name
+        assert a[2] == pytest.approx(b[2], abs=1e-3), name
+
+
+def _boxes(ln):
+    """Corners of every collision box of a link, in the link frame."""
+    out = []
+    for c in ln.findall('collision'):
+        b = c.find('geometry/box')
+        if b is None:
+            continue
+        o = c.find('origin')
+        rot = _rpy(*map(float, o.get('rpy').split()))
+        half = np.array(b.get('size').split(), float) / 2
+        k = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
+        out.append((k * half) @ rot.T + np.array(o.get('xyz').split(), float))
+    return out
+
+
+def _visual_pts(ln):
+    return np.vstack([_stl(PKG / m.get('filename').replace('package://cac_description/', ''))
+                      for m in ln.findall('visual/geometry/mesh')])
+
+
+STRUCT = ['base_link', 'diff_bar', 'left_rocker', 'right_rocker', 'left_bogie', 'right_bogie']
+
+
+def test_collision_boxes_inside_visual_bounds(robot):
+    links = {ln.get('name'): ln for ln in robot.findall('link')}
+    for name in STRUCT:
+        v = _visual_pts(links[name])
+        lo, hi = v.min(0) - 0.005, v.max(0) + 0.005
+        for corners in _boxes(links[name]):
+            assert (corners.min(0) >= lo).all() and (corners.max(0) <= hi).all(), name
+
+
+def test_collision_envelope_not_wider_or_lower_than_visual(robot):
+    tf = _zero_pose(robot)
+    links = {ln.get('name'): ln for ln in robot.findall('link')}
+    col, vis = [], []
+    for name in STRUCT:
+        rot, p = tf[name][:3, :3], tf[name][:3, 3]
+        col += [c @ rot.T + p for c in _boxes(links[name])]
+        vis.append(_visual_pts(links[name]) @ rot.T + p)
+        v_low = vis[-1][:, 2].min()
+        c_low = min((c @ rot.T + p)[:, 2].min() for c in _boxes(links[name]))
+        assert c_low >= v_low - 0.005, name
+    col, vis = np.vstack(col), np.vstack(vis)
+    assert np.ptp(col[:, 1]) <= np.ptp(vis[:, 1]) + 0.010
+    assert col[:, 2].min() >= vis[:, 2].min() - 0.005
+
+
+def test_readme_states_build_summary_mass():
+    import json
+    total = json.loads((PKG / 'urdf' / 'build_summary.json').read_text())['total_mass_kg']
+    assert f'{total:.1f} kg' in (PKG / 'README.md').read_text()

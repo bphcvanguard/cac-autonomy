@@ -33,8 +33,8 @@ LINKS = [
     ('Component103', 'rocker'), ('changed joint-differential', 'rocker'),
     ('Diff bearing', 'rocker'), ('Component72', 'rocker'), ('SOLID', 'rocker'),
     ('Rod 1', 'bogie'), ('Rod 2', 'bogie'), ('link2', 'bogie'), ('Component102', 'bogie'),
-    ('Component126', 'bogie'), ('Component127', 'bogie'), ('Component130', 'bogie'),
-    ('Component140', 'bogie'), ('Component141', 'bogie'), ('Component142', 'bogie'),
+    ('Component126', 'bogie'), ('Component127', 'bogie'), ('Component130', 'rocker'),
+    ('Component140', 'bogie'), ('Component141', 'rocker'), ('Component142', 'rocker'),
     ('Component143', 'bogie'), ('Component144', 'bogie'), ('Component145', 'bogie'),
     ('plates', 'bogie'),
     # motors, C-brackets and motor caps: travel with the leg that carries their wheel

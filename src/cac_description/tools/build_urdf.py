@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Build the rover URDF from the per-part STL export of 01Design_25.step.
+"""Build the rover URDF from the per-part STL export of the rover's STEP assembly.
 
-Inputs: parts.json (inspect_step.py) and parts_m/ (export_parts.py, STLs in metres, CAD frame).
-CAD frame: x along the rover, y across (rocker pivots at y = 0.5 and 560.5 mm), z up, millimetres
-in the STEP (converted to metres at export).
+Inputs: parts.json (inspect_step.py, or prep_keshav.py output) and parts_m/ (export_parts.py, STLs
+in metres, CAD frame). The STEP is the one named in the --model file's note (or --source-name).
+CAD frame: x along the rover, y across (rocker pivots at y = 0.5 and 560.5 mm in the original
+convention), z up, millimetres in the STEP (converted to metres at export).
 
 Zero pose = the physical standing pose on flat ground: rockers at their CAD angle (the
 differential is neutral there), each bogie rotated about its pin until its two wheels line up
 with the front wheel. On flat ground the body then sits pitched (see STANCE in the output).
 
 Usage: build_urdf.py PARTS_JSON PARTS_DIR OUT_PKG_DIR [--front -x|+x] [--total-mass KG]
+       [--model FILE] [--mirror-from left|right] [--source-name NAME]
 """
 import argparse
 import json
@@ -157,6 +159,7 @@ def load_model(path):
         if key in m:
             g[var] = np.array(m[key], float) * MM
     MATERIAL_DENSITY.update(m.get('density', {}))
+    return m.get('source')
 
 
 def mirror_side(parts, source):
@@ -199,8 +202,9 @@ def sim_variant(urdf_text, lock):
     """rover_sim.urdf: the same robot for DRIVING in gz-sim 8 on DART.
 
     DART ignores URDF mimic joints, so a free differential lets the body tip over. Here the rocker
-    joints and the diff bar are fixed (the bogies still articulate) and the wheels get the
-    anisotropic friction that lets the skid-steer turn. Everything else is byte-identical.
+    joints and the diff bar are fixed (the bogies still articulate). If SIM_WHEEL_FRICTION is set,
+    the wheels also get gazebo friction tags (by default none: the ground's friction decides).
+    Everything else is byte-identical.
     """
     import re
     out = urdf_text
@@ -229,11 +233,28 @@ def fmt(v):
     return ' '.join(f'{x:.6g}' for x in v)
 
 
+OBB_SLACK = 0.003            # m: an oriented box may poke this far outside the part's own bounds
+SPLIT_DEPTH = 3              # hollow parts over 1000 cm^3 may be split into up to 8 boxes
 MIN_COLLISION_VOL = 15e-6    # m^3: parts smaller than 15 cm^3 (pins, bolts) get no collision box
 
 
 def obb(points):
-    """Oriented bounding box via PCA: (centre, rotation with box axes as columns, size)."""
+    """Tightest of two boxes: the PCA oriented box or the link-frame axis-aligned box.
+
+    PCA on a hollow part (frame, C-bracket) tilts the box and makes it much bigger than the part,
+    so the axis-aligned box often wins. Returns (centre, rotation with box axes as columns, size).
+    """
+    c0, vecs, size = _pca_box(points)
+    lo, hi = points.min(0), points.max(0)
+    corners = np.array([[x, y, z] for x in (-.5, .5) for y in (-.5, .5) for z in (-.5, .5)])
+    reach = c0 + (corners * size) @ vecs.T          # the oriented box's corners in link axes
+    sticks_out = (reach.min(0) < lo - OBB_SLACK).any() or (reach.max(0) > hi + OBB_SLACK).any()
+    if sticks_out or np.prod(hi - lo) <= np.prod(size):
+        return (lo + hi) / 2, np.eye(3), hi - lo
+    return c0, vecs, size
+
+
+def _pca_box(points):
     c0 = points.mean(0)
     _, vecs = np.linalg.eigh(np.cov((points - c0).T))
     if np.linalg.det(vecs) < 0:
@@ -241,6 +262,28 @@ def obb(points):
     loc = (points - c0) @ vecs
     lo, hi = loc.min(0), loc.max(0)
     return c0 + vecs @ ((lo + hi) / 2), vecs, hi - lo
+
+
+def split_boxes(points, depth=0, max_depth=3, min_fill=0.5):
+    """Yield boxes (centre, rot, size) covering `points`.
+
+    A poorly fitting hollow part is split at the median of its longest axis (link frame) until
+    each piece fits well or depth runs out.
+    """
+    c, rot, size = obb(points)
+    lo, hi = points.min(0), points.max(0)
+    # fill = share of the box's volume in which the part has surface points (voxel occupancy)
+    n = 8
+    idx = np.clip(((points - lo) / np.maximum(hi - lo, 1e-9) * n).astype(int), 0, n - 1)
+    fill = len({tuple(i) for i in idx}) / n ** 3
+    if depth >= max_depth or fill >= min_fill or len(points) < 50:
+        yield c, rot, size
+        return
+    ax = int(np.argmax(hi - lo))
+    med = np.median(points[:, ax])
+    for sel in (points[:, ax] <= med, points[:, ax] > med):
+        if sel.sum() >= 4:
+            yield from split_boxes(points[sel], depth + 1, max_depth, min_fill)
 
 
 def rpy_of(rot):
@@ -259,13 +302,15 @@ def main():
     ap.add_argument('--model', default=None,
                     help="JSON with pivots (mm, this tool's CAD convention) and material "
                          'densities for a CAD file other than 01Design_25')
+    ap.add_argument('--source-name', default=None,
+                    help='STEP file name for the URDF header (default: from the model file)')
     ap.add_argument('--mirror-from', choices=('left', 'right'), default=None,
                     help='rebuild the other side as a mirror image of this CAD side '
                          '(internal CAD sense: left = CAD +y). Use when one side has newer joints')
     a = ap.parse_args()
 
-    if a.model:
-        load_model(a.model)
+    model_source = load_model(a.model) if a.model else None
+    source_name = a.source_name or model_source or '01Design_25.step'
     rows = json.load(open(a.parts_json))
     index = json.load(open(os.path.join(a.parts_dir, 'index.json')))
     files = {}
@@ -393,7 +438,7 @@ def main():
     L = []
     w = L.append
     w('<?xml version="1.0"?>')
-    w('<!-- GENERATED by tools/build_urdf.py from 01Design_25.step (old Vanguard rover).'
+    w(f'<!-- GENERATED by tools/build_urdf.py from {source_name} (old Vanguard rover).'
       ' Do not edit')
     w('     by hand: change the generator and re-run. Units: metres, kg.'
       ' REP-103: x forward, y left, z up.')
@@ -448,9 +493,10 @@ def main():
                 if vol < MIN_COLLISION_VOL:
                     continue
                 pts = to_base(t.reshape(-1, 3) - frames[lk])
-                c, rot, size = obb(pts)
-                w(f'    <collision><origin xyz="{fmt(c)}" rpy="{fmt(rpy_of(rot))}"/>'
-                  f'<geometry><box size="{fmt(np.maximum(size, 0.002))}"/></geometry></collision>')
+                for c, rot, size in split_boxes(pts, max_depth=SPLIT_DEPTH if vol > 1e-3 else 0):
+                    w(f'    <collision><origin xyz="{fmt(c)}" rpy="{fmt(rpy_of(rot))}"/>'
+                      f'<geometry><box size="{fmt(np.maximum(size, 0.002))}"/></geometry>'
+                      '</collision>')
         w('  </link>')
 
     def joint(name, jtype, parent, child, axis, extra=''):
