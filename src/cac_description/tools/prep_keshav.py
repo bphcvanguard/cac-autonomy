@@ -55,6 +55,8 @@ def material_of(name, kind, vol_mm3):
         return 'wheel'
     if kind == 'base_link' and n.startswith('base_link'):
         return 'body'
+    if n.startswith('Component67'):                        # the differential bar (wood in renders)
+        return 'wood'
     if n.startswith('COMPOUND') and vol_mm3 < 600e3:      # the 415 cm^3 block = drive motor
         return 'motor'
     return 'pla'                                           # joints, brackets, plates, caps, diff

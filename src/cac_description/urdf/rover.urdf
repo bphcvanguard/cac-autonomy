@@ -11,6 +11,13 @@
   <material name="bogie"><color rgba="0.16 0.45 0.75 1"/></material>
   <material name="wheel"><color rgba="0.12 0.12 0.12 1"/></material>
   <material name="diff_bar"><color rgba="0.75 0.2 0.17 1"/></material>
+  <material name="mat_pla"><color rgba="0.93 0.93 0.91 1"/></material>
+  <material name="mat_cf_tube"><color rgba="0.07 0.07 0.08 1"/></material>
+  <material name="mat_wheel"><color rgba="0.11 0.11 0.12 1"/></material>
+  <material name="mat_body"><color rgba="0.78 0.79 0.8 1"/></material>
+  <material name="mat_steel"><color rgba="0.55 0.56 0.58 1"/></material>
+  <material name="mat_motor"><color rgba="0.3 0.31 0.33 1"/></material>
+  <material name="mat_wood"><color rgba="0.62 0.47 0.32 1"/></material>
   <link name="base_footprint"/>
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/><child link="base_link"/>
@@ -19,22 +26,28 @@
   <link name="base_link">
     <inertial><origin xyz="0.000545624 -0.000381048 0.0154799" rpy="0 0 0"/><mass value="4.62879"/>
       <inertia ixx="0.246748" ixy="0.00257274" ixz="0.00679308" iyy="0.151042" iyz="-0.00264622" izz="0.346917"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/base_link.stl"/></geometry><material name="base_link"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/base_link__body.stl"/></geometry><material name="mat_body"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/base_link__cf_tube.stl"/></geometry><material name="mat_cf_tube"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/base_link__pla.stl"/></geometry><material name="mat_pla"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/base_link__steel.stl"/></geometry><material name="mat_steel"/></visual>
     <collision><origin xyz="0.0261897 -3.25261e-17 -0.000120851" rpy="-1.57692 -1.37734 0.00468807"/><geometry><box size="0.292891 0.529959 0.550894"/></geometry></collision>
     <collision><origin xyz="-0.0939587 -0.000171505 0.0998964" rpy="-0.0758394 -0.00258901 -0.747225"/><geometry><box size="0.0599379 0.060058 0.0713146"/></geometry></collision>
     <collision><origin xyz="-0.093942 0.00172193 0.0797402" rpy="-0.673232 -0.133802 -0.800381"/><geometry><box size="0.0606425 0.0640065 0.0625382"/></geometry></collision>
     <collision><origin xyz="-0.0939639 0.00175595 0.130035" rpy="0.672769 0.138358 -0.80377"/><geometry><box size="0.0606648 0.0639959 0.0625377"/></geometry></collision>
   </link>
   <link name="diff_bar">
-    <inertial><origin xyz="0.000232436 -0.00377119 0.0327798" rpy="0 0 0"/><mass value="0.722942"/>
-      <inertia ixx="0.0259787" ixy="1.22252e-05" ixz="-1.91767e-07" iyy="0.000473464" iyz="3.54208e-05" izz="0.0258104"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/diff_bar.stl"/></geometry><material name="diff_bar"/></visual>
+    <inertial><origin xyz="0.000245672 -0.0045904 0.0328182" rpy="0 0 0"/><mass value="0.584601"/>
+      <inertia ixx="0.021096" ixy="1.2192e-05" ixz="-2.63851e-07" iyy="0.000382946" iyz="3.53248e-05" izz="0.0209594"/></inertial>
+    <visual><geometry><mesh filename="package://cac_description/meshes/diff_bar__pla.stl"/></geometry><material name="mat_pla"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/diff_bar__wood.stl"/></geometry><material name="mat_wood"/></visual>
     <collision><origin xyz="0.000188208 -0.000309492 0.0429471" rpy="1.57079 0.0893071 -2.75767e-05"/><geometry><box size="0.0566059 0.0802922 0.644069"/></geometry></collision>
   </link>
   <link name="right_rocker">
     <inertial><origin xyz="-0.252848 0.102651 -0.207005" rpy="0 0 0"/><mass value="1.85956"/>
       <inertia ixx="0.0548015" ixy="0.0137573" ixz="-0.0373794" iyy="0.0921313" iyz="0.0147275" izz="0.0610579"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/right_rocker.stl"/></geometry><material name="rocker"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_rocker__cf_tube.stl"/></geometry><material name="mat_cf_tube"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_rocker__motor.stl"/></geometry><material name="mat_motor"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_rocker__pla.stl"/></geometry><material name="mat_pla"/></visual>
     <collision><origin xyz="-0.0121918 0.0374114 0.126778" rpy="0.819018 -1.56893 -0.648407"/><geometry><box size="0.0301074 0.0513158 0.0614492"/></geometry></collision>
     <collision><origin xyz="-0.197221 0.000440626 -0.0643056" rpy="1.89467 -0.239828 -1.65028"/><geometry><box size="0.0199525 0.019978 0.284203"/></geometry></collision>
     <collision><origin xyz="0.180156 0.000440622 -0.0585533" rpy="-0.0999231 1.25507 3.03383"/><geometry><box size="0.0200247 0.0206169 0.24702"/></geometry></collision>
@@ -48,7 +61,9 @@
   <link name="left_rocker">
     <inertial><origin xyz="-0.252848 -0.102651 -0.207005" rpy="0 0 0"/><mass value="1.85956"/>
       <inertia ixx="0.0548015" ixy="-0.0137573" ixz="-0.0373794" iyy="0.0921313" iyz="-0.0147275" izz="0.0610579"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/left_rocker.stl"/></geometry><material name="rocker"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_rocker__cf_tube.stl"/></geometry><material name="mat_cf_tube"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_rocker__motor.stl"/></geometry><material name="mat_motor"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_rocker__pla.stl"/></geometry><material name="mat_pla"/></visual>
     <collision><origin xyz="-0.0121918 -0.0374114 0.126778" rpy="-0.819018 -1.56893 0.648407"/><geometry><box size="0.0301074 0.0513158 0.0614492"/></geometry></collision>
     <collision><origin xyz="-0.197221 -0.000440626 -0.0643056" rpy="-1.89467 -0.239828 1.65028"/><geometry><box size="0.0199525 0.019978 0.284203"/></geometry></collision>
     <collision><origin xyz="0.180156 -0.000440622 -0.0585533" rpy="-0.0999231 -1.25507 0.10776"/><geometry><box size="0.0200247 0.0206169 0.24702"/></geometry></collision>
@@ -62,7 +77,9 @@
   <link name="right_bogie">
     <inertial><origin xyz="-0.030303 0.128111 -0.178154" rpy="0 0 0"/><mass value="2.93299"/>
       <inertia ixx="0.040874" ixy="0.00108766" ixz="-0.0139675" iyy="0.171891" iyz="0.0107025" izz="0.169485"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/right_bogie.stl"/></geometry><material name="bogie"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_bogie__cf_tube.stl"/></geometry><material name="mat_cf_tube"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_bogie__motor.stl"/></geometry><material name="mat_motor"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_bogie__pla.stl"/></geometry><material name="mat_pla"/></visual>
     <collision><origin xyz="-0.114725 0.000440622 -0.0873043" rpy="3.12362 -0.920701 -3.11996"/><geometry><box size="0.0200138 0.0201369 0.183185"/></geometry></collision>
     <collision><origin xyz="0.111217 0.000703284 -0.0026838" rpy="1.28268 -1.46147 -1.27875"/><geometry><box size="0.020871 0.0200713 0.117692"/></geometry></collision>
     <collision><origin xyz="-0.333641 0.26182 -0.254436" rpy="2.26311 -0.00733376 1.54523"/><geometry><box size="0.0506866 0.0970517 0.0931315"/></geometry></collision>
@@ -83,7 +100,9 @@
   <link name="left_bogie">
     <inertial><origin xyz="-0.030303 -0.128111 -0.178154" rpy="0 0 0"/><mass value="2.93299"/>
       <inertia ixx="0.040874" ixy="-0.00108766" ixz="-0.0139675" iyy="0.171891" iyz="-0.0107025" izz="0.169485"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/left_bogie.stl"/></geometry><material name="bogie"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_bogie__cf_tube.stl"/></geometry><material name="mat_cf_tube"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_bogie__motor.stl"/></geometry><material name="mat_motor"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_bogie__pla.stl"/></geometry><material name="mat_pla"/></visual>
     <collision><origin xyz="-0.114725 -0.000440622 -0.0873043" rpy="3.12362 0.920701 -0.0216336"/><geometry><box size="0.0200138 0.0201369 0.183185"/></geometry></collision>
     <collision><origin xyz="0.111217 -0.000703284 -0.0026838" rpy="1.28268 1.46147 -1.86285"/><geometry><box size="0.020871 0.0200713 0.117692"/></geometry></collision>
     <collision><origin xyz="-0.333641 -0.26182 -0.254436" rpy="0.87848 -0.00733376 -1.54523"/><geometry><box size="0.0506866 0.0970517 0.0931315"/></geometry></collision>
@@ -104,37 +123,37 @@
   <link name="right_rear_wheel">
     <inertial><origin xyz="5.4003e-05 -1.11022e-16 6.88171e-05" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="1.21973e-16" ixz="2.50535e-10" iyy="0.00617045" iyz="-1.09775e-16" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/right_rear_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_rear_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="right_middle_wheel">
     <inertial><origin xyz="-1.93584e-05 -3.33067e-16 0.00010347" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="1.70762e-16" ixz="6.78805e-11" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/right_middle_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_middle_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="right_front_wheel">
     <inertial><origin xyz="2.4481e-05 3.33067e-16 -9.83447e-05" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="1.21973e-16" ixz="6.02906e-11" iyy="0.00617045" iyz="9.75782e-17" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/right_front_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/right_front_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_rear_wheel">
     <inertial><origin xyz="5.4003e-05 -1.66533e-16 6.88171e-05" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="1.70762e-16" ixz="2.50535e-10" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/left_rear_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_rear_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_middle_wheel">
     <inertial><origin xyz="-1.93584e-05 -6.10623e-16 0.00010347" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="6.09864e-17" ixz="6.78804e-11" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/left_middle_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_middle_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_front_wheel">
     <inertial><origin xyz="2.4481e-05 1.11022e-16 -9.83447e-05" rpy="0 0 0"/><mass value="1.00432"/>
       <inertia ixx="0.00338652" ixy="-6.09864e-17" ixz="6.02907e-11" iyy="0.00617045" iyz="1.21973e-17" izz="0.00338652"/></inertial>
-    <visual><geometry><mesh filename="package://cac_description/meshes/left_front_wheel.stl"/></geometry><material name="wheel"/></visual>
+    <visual><geometry><mesh filename="package://cac_description/meshes/left_front_wheel.stl"/></geometry><material name="mat_wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <joint name="right_rocker_joint" type="revolute">

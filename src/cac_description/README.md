@@ -30,6 +30,29 @@ ros2 launch cac_description display.launch.py      # RViz: robot model + TF (nee
   - **The width is 0.5 mm over the rules' 0.75 m.** This comes from the mirrored left side, so measure the real rover once both sides have the new joints.
 - **Front:** the CAD's −x end (rod/wheel "1" end, the bogies lead). Rebuild with `--front=+x` to flip it.
 
+## Looks
+
+Each link is drawn per material, in colours that follow the team's renders:
+- PLA joints, brackets and plates: white;
+- carbon-fibre rods: black;
+- wheels: dark rubber;
+- body frame: aluminium grey;
+- differential bar: wood;
+- pins and screws: steel;
+- drive motors: dark grey.
+
+The colours come from `MAT_COLOUR` in `tools/build_urdf.py`. Each link still has one combined mesh as well (`meshes/<link>.stl`), used by the tools and tests.
+
+## Putting the rover in the arena
+
+```bash
+ros2 run cac_sim generate_arena --layout schematic \
+  --robot $(ros2 pkg prefix cac_description)/share/cac_description/urdf/rover_sim.urdf --out /workspace/arenas
+gz sim -r /workspace/arenas/schematic/arena.sdf
+```
+
+The rover is placed at the layout's start pose in the start zone. Its meshes are copied into the world folder.
+
 ## Masses: from the materials, until the rover is weighed
 
 | Material | Parts | Density used (per CAD volume) |

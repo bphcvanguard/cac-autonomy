@@ -1,9 +1,9 @@
 {
  "front": "-x",
- "total_mass_kg": 20.963,
+ "total_mass_kg": 20.824,
  "masses_kg": {
   "base_link": 4.629,
-  "diff_bar": 0.723,
+  "diff_bar": 0.585,
   "right_rocker": 1.86,
   "left_rocker": 1.86,
   "right_bogie": 2.933,

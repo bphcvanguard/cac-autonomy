@@ -43,6 +43,12 @@ DENSITY = {
     'wheel': 450.0,         # 2.24 L solid wheel in CAD; printed/rubber wheel, mostly hollow
     'diff_bar': 1200.0,
 }
+# Visual colour per material tag (looks like the team's renders/photos), used when parts carry
+# a material; otherwise COLOUR by link kind.
+MAT_COLOUR = {'pla': (0.93, 0.93, 0.91, 1), 'cf_tube': (0.07, 0.07, 0.08, 1),
+              'wheel': (0.11, 0.11, 0.12, 1), 'body': (0.78, 0.79, 0.80, 1),
+              'steel': (0.55, 0.56, 0.58, 1), 'motor': (0.30, 0.31, 0.33, 1),
+              'wood': (0.62, 0.47, 0.32, 1)}
 COLOUR = {'base_link': (0.55, 0.57, 0.6, 1), 'rocker': (0.85, 0.45, 0.1, 1),
           'bogie': (0.16, 0.45, 0.75, 1), 'wheel': (0.12, 0.12, 0.12, 1),
           'diff_bar': (0.75, 0.2, 0.17, 1)}
@@ -134,6 +140,7 @@ MATERIAL_DENSITY = {
     'motor': 1450.0,               # ~0.6 kg drive motor in a 415 cm^3 CAD block
     'wheel': 450.0,
     'body': 700.0,
+    'wood': 600.0,                 # the differential bar (plywood-like, ASSUMED)
 }
 
 
@@ -326,10 +333,24 @@ def main():
     # Meshes (link frame, robot axes).
     mesh_dir = os.path.join(a.out_pkg, 'meshes')
     os.makedirs(mesh_dir, exist_ok=True)
+    vis_parts = {}           # link -> [(material, mesh file stem)] for per-material visuals
     for lk, tl in link_tris.items():
         t = np.concatenate(tl).reshape(-1, 3)
         write_stl(os.path.join(mesh_dir, f'{lk}.stl.tmp'),
                   to_base(t - frames[lk]).reshape(-1, 3, 3))
+        mats = link_mats.get(lk, [None] * len(tl))
+        groups = {}
+        for tri, mat in zip(tl, mats):
+            groups.setdefault(mat, []).append(tri)
+        if len(groups) > 1 and None not in groups:
+            vis_parts[lk] = []
+            for mat, g in sorted(groups.items()):
+                t = np.concatenate(g).reshape(-1, 3)
+                write_stl(os.path.join(mesh_dir, f'{lk}__{mat}.stl.tmp'),
+                          to_base(t - frames[lk]).reshape(-1, 3, 3))
+                vis_parts[lk].append((mat, f'{lk}__{mat}'))
+        elif None not in groups:
+            vis_parts[lk] = [(next(iter(groups)), lk)]
 
     # Differential gear ratio from the linkage geometry: a rocker rotation q moves its ball joint
     # along x by z_lever * q; the bar end at lateral lever L turns the bar by that / L.
@@ -388,6 +409,8 @@ def main():
     w('<robot name="vanguard_rover">')
     for k, rgba in COLOUR.items():
         w(f'  <material name="{k}"><color rgba="{fmt(rgba)}"/></material>')
+    for k, rgba in MAT_COLOUR.items():       # separate names: 'wheel' exists in both tables
+        w(f'  <material name="mat_{k}"><color rgba="{fmt(rgba)}"/></material>')
     w('  <link name="base_footprint"/>')
     w('  <joint name="base_footprint_joint" type="fixed">')
     w('    <parent link="base_footprint"/><child link="base_link"/>')
@@ -405,7 +428,13 @@ def main():
           f' iyy="{inr[1, 1]:.6g}" iyz="{inr[1, 2]:.6g}" izz="{inr[2, 2]:.6g}"/></inertial>')
         mesh = ('<geometry><mesh filename="package://cac_description/meshes/'
                 f'{pub(lk)}.stl"/></geometry>')
-        w(f'    <visual>{mesh}<material name="{kind(lk)}"/></visual>')
+        if lk in vis_parts:
+            for mat, stem in vis_parts[lk]:
+                pstem = pub(stem.split('__')[0]) + ('__' + stem.split('__')[1] if '__' in stem else '')
+                w('    <visual><geometry><mesh filename="package://cac_description/meshes/'
+                  f'{pstem}.stl"/></geometry><material name="mat_{mat}"/></visual>')
+        else:
+            w(f'    <visual>{mesh}<material name="{kind(lk)}"/></visual>')
         if kind(lk) == 'wheel':
             w(f'    <collision><origin xyz="0 0 0" rpy="{math.pi / 2:.6g} 0 0"/>'
               f'<geometry><cylinder radius="{WHEEL_R}" length="{WHEEL_W}"/></geometry>'
@@ -458,6 +487,10 @@ def main():
     for lk in link_tris:
         os.replace(os.path.join(mesh_dir, f'{lk}.stl.tmp'),
                    os.path.join(mesh_dir, f'{pub(lk)}.stl'))
+        for mat, stem in vis_parts.get(lk, []):
+            if '__' in stem:
+                os.replace(os.path.join(mesh_dir, f'{stem}.stl.tmp'),
+                           os.path.join(mesh_dir, f'{pub(lk)}__{mat}.stl'))
     summary = {
         'front': a.front, 'total_mass_kg': round(sum(p[0] for p in props.values()), 3),
         'masses_kg': {pub(k): round(props[k][0], 3) for k in order},

@@ -118,3 +118,10 @@ def test_sim_variant_wheel_friction():
     g = {e.get('reference'): e for e in sim.findall('gazebo')}
     wheels = [ln.get('name') for ln in sim.findall('link') if ln.get('name').endswith('_wheel')]
     assert not g or sorted(g) == sorted(wheels)
+
+
+@pytest.mark.parametrize('path', [URDF, SIM])
+def test_material_names_unique(path):
+    """urdfdom (and so gz sdf / RViz) rejects a URDF that defines one material name twice."""
+    names = [m.get('name') for m in ET.parse(path).getroot().findall('material')]
+    assert len(names) == len(set(names))
