@@ -55,6 +55,10 @@ The rover is placed at the layout's start pose in the start zone. Its meshes are
 
 ## Camera: RealSense D455 on a printed bracket
 
+| The rover with the D455 mounted | The bracket on the front top cross member |
+|---|---|
+| ![rover with camera](cad/camera_on_rover.png) | ![bracket close-up](cad/bracket_close.png) |
+
 **Pose.** The camera's centre is at x 0.35, y 0, z 0.68 m (in `base_footprint`), pitched 22.5° down.
 The top of the camera is 0.698 m above the ground, so it is inside the 0.75 m stowed height.
 The pose comes from a study (`cad/camera_mount_study.md`, figures `cad/camera_fig*.png`). It ray-cast the D455's field of view against this rover's real geometry over a sweep of positions and pitches. Results at this pose:
