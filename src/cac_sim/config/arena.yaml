@@ -204,9 +204,10 @@ appearance:
   wall_lightness: [0.92, 1.08]      # ASSUMED: x on wall colour; beige .. off-white .. light grey
 
 our_rover:
-  # Our rover (the old Vanguard rocker-bogie), for the test harness: spawn size, clearance and
-  # contact checks. NOT used by the randomiser (see randomiser.robot_footprint). Measured from the
-  # CAD (01Design_25.step) standing on flat ground; URDF in cac_description.
-  footprint: [1.38, 0.67]           # L x W, metres (wheelbase 1.16, track 0.57)
-  height: 0.92                      # metres standing (Unstop/schematic stowed limit is 0.75!)
-  mass_kg: null                     # TO BE MEASURED (BCP-mass divides by it)
+  # Our rover (the old Vanguard rocker-bogie with the new joints), for the test harness: spawn
+  # size, clearance and contact checks. NOT used by the randomiser (randomiser.robot_footprint).
+  # From the CAD NEW JOINTS KESHAV ASSEMBLY.step standing on flat ground (left side mirrored from
+  # the updated right side); URDF in cac_description.
+  footprint: [1.11, 0.75]           # L x W, metres (wheelbase 0.89, track 0.65); W is 0.7505
+  height: 0.68                      # metres standing: under the 0.75 m stowed limit
+  mass_kg: null                     # TO BE WEIGHED (BCP-mass divides by it); CAD estimate ~21 kg
