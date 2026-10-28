@@ -1,0 +1,80 @@
+{
+  "source": "NEW JOINTS KESHAV ASSEMBLY.step",
+  "_note": "NEW JOINTS KESHAV ASSEMBLY.step after prep_keshav.py (rotated to the 01Design_25 convention, mm). Pivots taken from the UPDATED side (internal 'left' = CAD +y = robot right with front -x); the other side is rebuilt by --mirror-from left.",
+  "rocker_pivot": {
+    "left": [
+      264.0,
+      341.0,
+      609.0
+    ],
+    "right": [
+      264.0,
+      -346.4,
+      609.0
+    ]
+  },
+  "bogie_pivot": {
+    "left": [
+      -86.0,
+      341.0,
+      487.0
+    ],
+    "right": [
+      -86.0,
+      -346.4,
+      487.0
+    ]
+  },
+  "diff_pivot": [
+    358.0,
+    -3.0,
+    709.0
+  ],
+  "diff_link_on_rocker": [
+    332.0,
+    303.0,
+    735.0
+  ],
+  "diff_bar_end": [
+    353.0,
+    303.0,
+    766.0
+  ],
+  "camera": {
+    "_note": "Intel RealSense D455, fixed mount on the body's front top cross member (30 x 30 mm). Pose from the mount study (cad/camera_mount_study.md): best balance of ground coverage ahead (blind 0.24 m past the front wheels, 0% self-occlusion) and ArUco markers in view out to 8 m (11 deg margin). Camera body size and mass are from memory, NOT checked against Intel's datasheet: verify. Colour optical frame at the body centre; depth optical frame at the left imager (depth_offset +0.0475 m y, from realsense-ros, UNVERIFIED) - use realsense2_description for exact extrinsics on the real robot.",
+    "name": "camera",
+    "mount_stl": "d455_bracket.stl",
+    "mount_material": "pla",
+    "xyz": [
+      0.3517,
+      0.0,
+      0.1903
+    ],
+    "rpy": [
+      0.0,
+      0.40158,
+      0.0
+    ],
+    "size": [
+      0.026,
+      0.124,
+      0.029
+    ],
+    "mass": 0.39,
+    "gazebo": {
+      "hfov_deg": 87.0,
+      "width": 640,
+      "height": 360,
+      "rate": 15,
+      "near": 0.52,
+      "far": 6.0,
+      "noise": 0.007
+    },
+    "depth_offset": [
+      0.0,
+      0.0475,
+      0.0
+    ],
+    "_note_offsets": "Depth comes from the D455's left imager, ~47.5 mm left of the body centre (realsense-ros _d455.urdf.xacro; UNVERIFIED against Intel). Colour offset left at 0 (unknown). On the real robot use realsense2_description's frames."
+  }
+}
