@@ -51,7 +51,15 @@ Run any world that has this rover with:
 gz sim -r --physics-engine gz-physics-bullet-featherstone-plugin <world.sdf>
 ```
 
-or set `<physics type="bullet-featherstone">` in the world. In the `cac_sim` schematic arena on Bullet-Featherstone, the rover settles on the sand and the world runs at 1.00× real time.
+or name the plugin in the world's Physics system:
+`<plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"><engine><filename>gz-physics-bullet-featherstone-plugin</filename></engine></plugin>`.
+Setting `<physics type="bullet-featherstone">` on its own is **not** enough: gz-sim 8 still loads DART (checked with `-v 4`).
+The `cac_sim` arena worlds already name the plugin, so `gz sim -r arena.sdf` works with this rover.
+
+- **Measured in the schematic arena:** with the rover driving back and forth, the world runs at about 5× real time on 2 CPU cores (1.0× when capped).
+- **Wheel friction under Bullet:** Bullet combines friction as roughly 0.7 × sand × wheel, while DART takes the lower of the two.
+  - The wheels carry no friction tag yet, so Bullet treats them as 1.0. On the arena's sand (0.5), the effective friction is about 0.35.
+  - Set the wheels' `<bullet><friction>` / `<friction2>` (and `fdir1`) when the Platform pod tunes traction.
 
 - **Collision shapes:**
   - Wheels are exact cylinders.
