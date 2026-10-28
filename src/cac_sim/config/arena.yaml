@@ -208,6 +208,8 @@ our_rover:
   # size, clearance and contact checks. NOT used by the randomiser (randomiser.robot_footprint).
   # From the CAD NEW JOINTS KESHAV ASSEMBLY.step standing on flat ground (left side mirrored from
   # the updated right side); URDF in cac_description.
-  footprint: [1.11, 0.75]           # L x W, metres (wheelbase 0.89, track 0.65); W is 0.7505
+  # W is 0.7505 m in the CAD: 0.5 mm OVER the rules' 0.75 m stowed width (robot_footprint).
+  # It comes from the mirrored left side; measure the real rover.
+  footprint: [1.11, 0.7505]         # L x W, metres (wheelbase 0.89, track 0.65)
   height: 0.68                      # metres standing: under the 0.75 m stowed limit
   mass_kg: null                     # TO BE WEIGHED (BCP-mass divides by it); CAD estimate ~21 kg

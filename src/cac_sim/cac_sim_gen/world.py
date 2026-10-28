@@ -455,7 +455,7 @@ def _pretty(sdf):
 
 
 def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=False, low_gfx=False,
-                vary_appearance=False, appearance_seed=None):
+                vary_appearance=False, appearance_seed=None, robot_urdf=None):
     """Write <out_dir>/<layout name>/ and return that directory (the world is its arena.sdf).
 
     vary_appearance perturbs lighting and colours only (see appearance.py, `appearance:` in
@@ -519,6 +519,9 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
         models += _sitcams(cfg)
     if overlay:
         models.append(_overlay(cfg, layout))
+    if robot_urdf:   # the team's rover (or any URDF) at the layout's start pose
+        from . import robot as robot_mod
+        models.append(robot_mod.robot_model(robot_urdf, root, layout['start_pose']))
 
     sdf = (f'<?xml version="1.0"?><sdf version="1.9"><world name="cac_arena">'
            f'{_header(cfg, low_gfx, app)}'

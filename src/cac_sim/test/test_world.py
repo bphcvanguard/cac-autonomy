@@ -1,7 +1,9 @@
 """World writer: well-formed SDF, truth fenced off, legal markers, deterministic output."""
 import filecmp
 import hashlib
+import math
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -195,6 +197,7 @@ def test_terrain_sdf_carries_configured_friction(tmp_path, mode):
     """
     cfg = config.load_config()
     cfg['terrain']['friction'] = 0.37
+    cfg['terrain']['torsional'] = 0.05
     cfg['sand']['collision'] = mode
     root = world.write_world(cfg, config.load_layout('schematic'), tmp_path)
     w = ET.parse(root / 'arena.sdf').getroot().find('world')
@@ -211,6 +214,8 @@ def test_terrain_sdf_carries_configured_friction(tmp_path, mode):
         assert bullet is not None, c.get('name')
         assert float(bullet.findtext('friction')) == pytest.approx(0.37)
         assert float(bullet.findtext('friction2')) == pytest.approx(0.37)
+        tors = c.find('surface/friction/torsional/coefficient')   # bullet spinning friction
+        assert tors is not None and float(tors.text) == pytest.approx(0.05), c.get('name')
     boxes = [c for c in cols if c.find('geometry/box') is not None]
     assert len(boxes) == (len(cols) - 1 if mode == 'tiles' else 0)
     assert config.load_config()['terrain']['friction'] == pytest.approx(0.5)
@@ -673,3 +678,33 @@ def test_crater_patch_keeps_bowl_depth(name):
         near = ((v[:, 0] - p['position'][0]) ** 2 + (v[:, 1] - p['position'][1]) ** 2
                 < (p['diameter'] / 2) ** 2)
         assert v[near, 2].min() <= -p['depth_eff'] + 0.003
+
+
+ROBOT_URDF = """<?xml version="1.0"?>
+<robot name="cube"><link name="base"><inertial><mass value="1"/>
+<inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/></inertial>
+<visual><geometry><mesh filename="package://fakepkg/meshes/cube.stl"/></geometry></visual>
+<collision><geometry><box size="0.2 0.2 0.2"/></geometry></collision></link></robot>
+"""
+
+
+@pytest.mark.skipif(shutil.which('gz') is None, reason='needs gz (Gazebo) for gz sdf -p')
+def test_robot_option_places_urdf_at_start_pose(tmp_path):
+    pkg = tmp_path / 'fakepkg'
+    (pkg / 'urdf').mkdir(parents=True)
+    (pkg / 'meshes').mkdir()
+    (pkg / 'meshes' / 'cube.stl').write_bytes(b'solid x\nendsolid x\n')
+    (pkg / 'urdf' / 'cube.urdf').write_text(ROBOT_URDF)
+    cfg = config.load_config()
+    lay = config.load_layout('schematic')
+    root = world.write_world(cfg, lay, tmp_path / 'w', robot_urdf=pkg / 'urdf' / 'cube.urdf')
+    w = ET.parse(root / 'arena.sdf').getroot().find('world')
+    rover = [m for m in w.findall('model') if m.get('name') == 'rover']
+    assert len(rover) == 1
+    x, y, _, _, _, yaw = map(float, rover[0].findtext('pose').split())
+    sp = lay['start_pose']
+    assert (x, y) == pytest.approx((sp['x'], sp['y']))
+    assert yaw == pytest.approx(math.radians(sp['yaw_deg']))
+    uris = [u.text for u in rover[0].iter('uri')]
+    assert uris and all(u.startswith('robot/fakepkg/') for u in uris)
+    assert all((root / u).is_file() for u in uris)        # meshes copied next to the world

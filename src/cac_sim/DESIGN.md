@@ -57,7 +57,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
                [--config arena.yaml] [--sand-collision mesh|tiles] [--physics-engine dart|bullet-featherstone] [--markers] [--marker-preset frame_inner|perimeter_walls]
-               [--setup-sheet] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
+               [--setup-sheet] [--robot URDF] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
 Output on stderr: `warning [name]:` = hard problem (overlap, outside the arena, no path);

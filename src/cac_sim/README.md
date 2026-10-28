@@ -62,6 +62,7 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--config FILE` | `arena.yaml` override (default: the packaged one) |
 | `--marker-preset NAME` | `frame_inner` (start zone's inner edges, default) or `perimeter_walls` (the west and south walls). The rule text allows both readings; see `arena.yaml` |
 | `--setup-sheet` | also writes `truth/setup_sheet.md` and `truth/setup_plan.png`, so a physical mock arena can copy the layout (see below). Nothing else changes. Reveals obstacle positions, so it stays with the truth |
+| `--robot URDF` | Puts a robot at the layout's start pose. Needs `gz` (it runs `gz sdf -p`). The robot's `package://` meshes are copied into `<world>/robot/` so the world stays self-contained. For the team's rover on DART use `cac_description`'s `urdf/rover_sim.urdf` |
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
@@ -183,9 +184,18 @@ Speed, measured on bullet-featherstone with the rover spawned in the start zone 
 | schematic | 4.82 / 4.93 / 5.07 | 3.04 | 1.00 |
 | dense seed 16 | 5.15 / 5.22 / 5.40 | 3.07 | 1.00 |
 
-On bullet-featherstone the whole-arena mesh is ~40 % slower than `tiles`, so `tiles` stays the
-default for speed as well as friction. (DART with the tipped full rover ran 3.7-6.0 uncapped; not
-a like-for-like number.)
+On bullet-featherstone the whole-arena mesh is ~40 % slower than `tiles`.
+
+On **DART** (the default) it is the other way round: a wheel touching a box gets 2 contact points,
+against 1 on the mesh, so `tiles` costs some speed.
+
+| World | DART `tiles` (default) | DART `mesh` | capped |
+|---|---|---|---|
+| schematic | 7.2 | 7.8 | 1.00 |
+| dense seed 16 | 6.5 | 8.2 | 1.00 |
+
+That run used a test rover, headless, on 2 pinned cores. `tiles` is the default for friction, not
+speed: on a mesh, gz-sim 8 ignores the sand's friction.
 
 ## How the sand drives (measured in this sim)
 
@@ -261,3 +271,14 @@ default torsional, spinning friction (a lever arm in metres) also resists every 
 any slip on sand beyond Coulomb friction. Real dry sand gives ~5-10 % straight-line odometry error;
 add it on purpose (a scale error and heading drift on the odometry path, or the robot-side
 `WheelSlip` plugin) when testing localisation.
+
+## Updating an old workspace
+
+If you built with `--symlink-install` before 28 Oct 2026, delete the package's build once:
+
+```bash
+rm -rf build/cac_sim install/cac_sim
+```
+
+Otherwise empty `truth/` folders full of broken links stay in `install/` (they contain nothing readable).
+

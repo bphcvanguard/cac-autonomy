@@ -47,6 +47,9 @@ def main(argv=None):
     ap.add_argument('--setup-sheet', action='store_true',
                     help='also write truth/setup_sheet.md + setup_plan.png: how to build this '
                          'layout by hand on a real mock arena (reveals obstacle positions)')
+    ap.add_argument('--robot', default=None, metavar='URDF',
+                    help="put this URDF at the layout's start pose (needs `gz`); for the team's "
+                         'rover on DART use cac_description urdf/rover_sim.urdf')
     ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
     ap.add_argument('--overlay', action='store_true', help='draw zones and target (visual only)')
     ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
@@ -106,9 +109,13 @@ def main(argv=None):
         try:
             root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
                                      overlay=a.overlay, low_gfx=a.low_gfx,
-                                     vary_appearance=vary, appearance_seed=a.appearance_seed)
+                                     vary_appearance=vary, appearance_seed=a.appearance_seed,
+                                     robot_urdf=a.robot)
         except world.MarkerError as e:
             print(f'error: --markers: {e}', file=sys.stderr)
+            return 2
+        except RuntimeError as e:          # robot.RobotError: bad URDF, no gz, missing mesh
+            print(f'error: --robot: {e}', file=sys.stderr)
             return 2
         if a.setup_sheet:
             sheet = layout_mod.setup_sheet(cfg, lay, a.out, markers=a.markers)
