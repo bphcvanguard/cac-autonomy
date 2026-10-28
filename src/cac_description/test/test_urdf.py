@@ -90,3 +90,33 @@ def test_frame_conventions(robot):
     tf = _zero_pose(robot)
     assert tf['left_front_wheel'][0, 3] > tf['left_rear_wheel'][0, 3]
     assert tf['left_front_wheel'][1, 3] > 0 > tf['right_front_wheel'][1, 3]
+
+
+SIM = PKG / 'urdf' / 'rover_sim.urdf'
+
+
+def test_sim_variant_only_locks_the_differential():
+    """rover_sim.urdf = rover.urdf with rockers + diff bar fixed and wheel friction added."""
+    full, sim = ET.parse(URDF).getroot(), ET.parse(SIM).getroot()
+    jf = {j.get('name'): j for j in full.findall('joint')}
+    js = {j.get('name'): j for j in sim.findall('joint')}
+    assert jf.keys() == js.keys()
+    locked = {n for n, j in js.items() if j.get('type') == 'fixed'} - \
+        {n for n, j in jf.items() if j.get('type') == 'fixed'}
+    assert locked == {'left_rocker_joint', 'right_rocker_joint', 'diff_bar_joint'}
+    assert not list(sim.iter('mimic'))
+    for n in jf:                     # same frames everywhere
+        assert jf[n].find('origin').attrib == js[n].find('origin').attrib, n
+    lf = {ln.get('name'): ET.tostring(ln) for ln in full.findall('link')}
+    ls = {ln.get('name'): ET.tostring(ln) for ln in sim.findall('link')}
+    assert lf == ls                  # identical geometry, inertia, collisions
+
+
+def test_sim_variant_wheel_friction():
+    sim = ET.parse(SIM).getroot()
+    g = {e.get('reference'): e for e in sim.findall('gazebo')}
+    wheels = [ln.get('name') for ln in sim.findall('link') if ln.get('name').endswith('_wheel')]
+    assert sorted(g) == sorted(wheels)
+    for w in wheels:
+        assert float(g[w].findtext('mu1')) < 0.3 < float(g[w].findtext('mu2'))
+        assert g[w].findtext('fdir1').split() == ['0', '0', '1']

@@ -151,6 +151,41 @@ def mirror_side(parts, source):
     return keep + added
 
 
+# Wheel friction for driving in gz-sim 8 DART (measured in the cac_sim arena, sand mu 0.5):
+# isotropic friction cannot skid-steer this rover (wheels +0.87..-0.29 m fore-aft on a 0.57 m
+# track lock yaw on any engine); lateral 0.2 / rolling 1.0 turned 360.4 of 360 deg with odometry
+# exact at the real track; lateral above ~0.3 turned 0 deg. fdir1 = the axle (collision frame z).
+SIM_WHEEL_FRICTION = {'mu1': 0.2, 'mu2': 1.0, 'fdir1': '0 0 1'}
+
+
+def sim_variant(urdf_text, lock):
+    """rover_sim.urdf: the same robot for DRIVING in gz-sim 8 on DART.
+
+    DART ignores URDF mimic joints, so a free differential lets the body tip over. Here the rocker
+    joints and the diff bar are fixed (the bogies still articulate) and the wheels get the
+    anisotropic friction that lets the skid-steer turn. Everything else is byte-identical.
+    """
+    import re
+    out = urdf_text
+    for name in lock:
+        pat = re.compile(r'(<joint name="%s" type=")revolute(">.*?</joint>)' % re.escape(name), re.S)
+        m = pat.search(out)
+        assert m, name
+        body = re.sub(r'<axis[^>]*/>|<limit[^>]*/>|<dynamics[^>]*/>|<mimic[^>]*/>', '', m.group(2))
+        out = out[:m.start()] + m.group(1) + 'fixed' + body + out[m.end():]
+    gz = []
+    for wheel in re.findall(r'<link name="([a-z_]+_wheel)">', out):
+        f = SIM_WHEEL_FRICTION
+        gz.append(f'  <gazebo reference="{wheel}"><mu1>{f["mu1"]}</mu1><mu2>{f["mu2"]}</mu2>'
+                  f'<fdir1>{f["fdir1"]}</fdir1></gazebo>')
+    out = out.replace('</robot>', '\n'.join(gz) + '\n</robot>')
+    note = ('<!-- rover_sim.urdf: DRIVING variant for gz-sim 8 DART. Rockers and diff bar are FIXED\n'
+            '     (DART ignores mimic joints; a free differential tips the body over); bogies still\n'
+            '     articulate; wheels carry anisotropic friction (lateral 0.2 / rolling 1.0, fdir1 =\n'
+            '     axle) so the skid-steer can turn. Use rover.urdf for RViz and suspension work. -->\n')
+    return out.replace('<robot ', note + '<robot ', 1)
+
+
 def fmt(v):
     return ' '.join(f'{x:.6g}' for x in v)
 
@@ -377,6 +412,9 @@ def main():
     os.makedirs(os.path.join(a.out_pkg, 'urdf'), exist_ok=True)
     with open(os.path.join(a.out_pkg, 'urdf', 'rover.urdf'), 'w') as f:
         f.write('\n'.join(L) + '\n')
+    with open(os.path.join(a.out_pkg, 'urdf', 'rover_sim.urdf'), 'w') as f:
+        f.write(sim_variant('\n'.join(L) + '\n', [pub('left_rocker_joint'),
+                                                     pub('right_rocker_joint'), 'diff_bar_joint']))
 
     for lk in link_tris:
         os.replace(os.path.join(mesh_dir, f'{lk}.stl.tmp'),

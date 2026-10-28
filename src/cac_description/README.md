@@ -40,26 +40,34 @@ python3 tools/build_urdf.py cad/parts.json <parts_m dir> . --front=-x --total-ma
 
 That keeps each part's share of the mass and scales every inertia to match.
 
-## Gazebo: use Bullet-Featherstone, not DART
+## Two URDFs: which one to use
 
-- **DART (gz-sim 8's default) does not support mimic joints.** It logs "the chosen physics engine does not support mimic constraints". The rockers then move independently, the body loses the differential that holds its pitch, and the rover tips over (measured: 34° backwards on flat ground).
-- **`bullet-featherstone` enforces both mimics.** Measured with a 10 cm block under the left front wheel: left rocker −0.0299 rad, right rocker +0.0299 rad, diff bar +0.0123 rad (= 0.412 × 0.0299). Only the left bogie tilted.
+| File | Use it for | Differential | Wheels |
+|---|---|---|---|
+| `urdf/rover.urdf` | RViz, TF, and suspension studies on Bullet | real: mimic joints | no friction tags |
+| `urdf/rover_sim.urdf` | **Driving in Gazebo** (the `cac_sim` arena runs on DART) | rockers and diff bar **locked**; bogies still move | lateral 0.2 / rolling 1.0, `fdir1` = axle |
 
-Run any world that has this rover with:
+Both files have the same links, frames, meshes, inertias and collisions; a test checks this.
+They are generated together.
 
-```bash
-gz sim -r --physics-engine gz-physics-bullet-featherstone-plugin <world.sdf>
-```
+**Why two files.** Gazebo Harmonic has no physics engine that does both things this rover needs (all measured):
 
-or name the plugin in the world's Physics system:
-`<plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"><engine><filename>gz-physics-bullet-featherstone-plugin</filename></engine></plugin>`.
-Setting `<physics type="bullet-featherstone">` on its own is **not** enough: gz-sim 8 still loads DART (checked with `-v 4`).
-The `cac_sim` arena worlds already name the plugin, so `gz sim -r arena.sdf` works with this rover.
+- **DART ignores mimic joints.** The full rover's free differential lets the body tip over: 34° backwards on flat ground. With the rockers locked (`rover_sim.urdf`), DART drives well:
+  - turn in place: 360.4° of 360°, and odometry matches exactly at the real 0.570 m track;
+  - 1 m arc: 1.036 m radius;
+  - 11 cm crater: crosses 6 out of 6 times;
+  - off-centre boulder: climbs it with under 10° of roll.
+- **Bullet-Featherstone enforces the mimics,** so the real differential works. Checked with a 10 cm block under the left front wheel: rockers −0.0299 / +0.0299 rad, diff bar 0.0123 rad (= 0.412 × 0.0299). **But it cannot skid-steer:**
+  - turn in place: 0.2° of 360°;
+  - even with spinning friction off, only 53–93°, because Bullet-Featherstone fixes friction directions to the world axes;
+  - it got stuck in an 11 cm crater.
 
-- **Measured in the schematic arena:** with the rover driving back and forth, the world runs at about 5× real time on 2 CPU cores (1.0× when capped).
-- **Wheel friction under Bullet:** Bullet combines friction as roughly 0.7 × sand × wheel, while DART takes the lower of the two.
-  - The wheels carry no friction tag yet, so Bullet treats them as 1.0. On the arena's sand (0.5), the effective friction is about 0.35.
-  - Set the wheels' `<bullet><friction>` / `<friction2>` (and `fdir1`) when the Platform pod tunes traction.
+  Use it only to study the suspension.
+- **DART cannot model the real linkage as a closed loop either** (gz-physics drops loop joints).
+
+**Wheel friction must be anisotropic.** The wheels sit +0.87 to −0.29 m fore-aft on a 0.57 m track. With equal friction in every direction, the rover cannot turn in place on either engine. Lateral friction above about 0.3 turned 0°; 0.2 / 1.0 turns cleanly. This is ordinary friction physics, so the real rover on real sand has the same problem in a milder form.
+
+To run the full model on Bullet, start Gazebo with `--physics-engine gz-physics-bullet-featherstone-plugin`, or name the plugin in the world's Physics system. `<physics type>` alone still loads DART.
 
 - **Collision shapes:**
   - Wheels are exact cylinders.
@@ -67,7 +75,7 @@ The `cac_sim` arena worlds already name the plugin, so `gz sim -r arena.sdf` wor
   - Pins and bolts have no collision.
   - The full meshes are for visuals only: using them as collisions ran the arena at 0.05× real time.
 - **No drive plugin is included.** The skid-steer controller belongs to the Platform pod.
-- **Turning in place is hard for this rover.** The wheelbase (1.16 m) is twice the track (0.57 m). With plain friction, a skid-steer that long can't turn in place. The wheels need anisotropic friction, which means `fdir1` along the axle and less friction sideways than along the rolling direction. See `cac_sim`'s README, "How the sand drives".
+- **Drive setup measured in the arena:** wheel separation 0.57 m and wheel radius 0.11 m. The skid-steer controller belongs to the Platform pod; see `cac_sim`'s README, "How the sand drives".
 
 ## Regenerating from the CAD
 
