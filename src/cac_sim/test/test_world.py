@@ -416,7 +416,8 @@ GOLDEN_SDF_SHA256 = {
     # collision gains <bullet><friction>/<friction2>. Checked: reverting just those two strings
     # reproduces the previous hashes exactly (all four).
     # 2026-10-28 final: default engine back to dart (type="dart" + dartsim plugin) and sand gains
-    # <torsional><coefficient>0 (terrain.torsional); all four hashes regenerated for those two changes.
+    # <torsional><coefficient>0 (terrain.torsional); all four hashes regenerated for those
+    # two changes.
     ('random', '3'): '1f51f4c4176c6777b2995943e665a61c521063f95a44b2848d7e5259992d7e02',
     ('schematic', None): '6c60dee88e3906ca0a383d818d3cd307adc791e9d564e7f91ff55791afe4ca5f',
 }
@@ -708,3 +709,22 @@ def test_robot_option_places_urdf_at_start_pose(tmp_path):
     uris = [u.text for u in rover[0].iter('uri')]
     assert uris and all(u.startswith('robot/fakepkg/') for u in uris)
     assert all((root / u).is_file() for u in uris)        # meshes copied next to the world
+
+
+@pytest.mark.skipif(shutil.which('gz') is None, reason='needs gz (Gazebo) to load the world')
+@pytest.mark.parametrize('engine', ['dart', 'bullet-featherstone'])
+def test_world_loads_in_gazebo_without_errors(tmp_path, engine):
+    """Load a generated world headless for 200 steps: no [Err] / [Wrn] in the log."""
+    import os
+    cfg = config.load_config()
+    cfg['physics']['engine'] = engine
+    root = world.write_world(cfg, config.load_layout('schematic'), tmp_path, markers=False)
+    env = dict(os.environ, GZ_PARTITION=f'cac_sim_test_{os.getpid()}_{engine}')
+    r = subprocess.run(['gz', 'sim', '-s', '-r', '-v', '2', '--iterations', '200',
+                        str(root / 'arena.sdf')], capture_output=True, text=True, timeout=180,
+                       env=env, cwd=root)
+    log = r.stdout + r.stderr
+    bad = [ln for ln in log.splitlines()
+           if ('[Err]' in ln or '[Wrn]' in ln) and 'Fuel' not in ln]   # no network in CI
+    assert r.returncode == 0, log[-2000:]
+    assert not bad, '\n'.join(bad[:10])
