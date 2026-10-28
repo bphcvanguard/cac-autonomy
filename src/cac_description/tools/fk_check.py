@@ -1,5 +1,6 @@
 """Assemble a URDF at zero pose (no ROS needed): wheel-ground contact check + 3-view render."""
 import math
+import os
 import sys
 import xml.etree.ElementTree as ET
 
@@ -10,7 +11,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402,I100
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection  # noqa: E402
 
-sys.path.insert(0, '/home/kpoola/cad/tools')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_urdf import read_stl  # noqa: E402,I100
 
 urdf, pkg, out = sys.argv[1:4]
@@ -44,10 +45,10 @@ axs = [fig.add_subplot(1, 3, k + 1, projection='3d') for k in range(3)]
 print('wheel bottom z in base_footprint (m):')
 for L in r.findall('link'):
     n = L.get('name')
-    v = L.find('visual')
-    if v is None:
+    mesh = L.find('visual/geometry/mesh')       # first visual; the camera body is a plain box
+    if mesh is None:
         continue
-    fn = v.find('geometry/mesh').get('filename').replace('package://cac_description/',
+    fn = mesh.get('filename').replace('package://cac_description/',
                                                          pkg + '/')
     t = read_stl(fn).reshape(-1, 3)
     t = (t @ T[n][:3, :3].T + T[n][:3, 3]).reshape(-1, 3, 3)

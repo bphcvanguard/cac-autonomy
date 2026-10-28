@@ -1,7 +1,7 @@
 # D455 fixed mount on the CAC 2027 rover: design study
 
-Scratch study, 28 Oct 2026. Rover: `cac_description` `rover.urdf` visual meshes at zero pose (standing on flat ground). Frames: REP-103, `base_footprint` with ground at z=0, front = +x.
-Study code and data are **not in the repo** (a one-off scratch study; ask Krithin). Code: `common.py` (FK + meshes), `rt.py` (numpy Moller-Trumbore), `model.py` (metrics), `sweep.py`, `robust.py`, `figs.py`, `pose_json.py`. Data: `sweep.json` (375 poses).
+Study, 28 Oct 2026. Rover: `cac_description` `rover.urdf` visual meshes at zero pose (standing on flat ground). Frames: REP-103, `base_footprint` with ground at z=0, front = +x.
+Method: ray-cast the D455's colour and depth fields of view against the rover's meshes, over 375 candidate poses (position × height × pitch), with the rover level and pitched ±5 deg.
 
 ## Recommendation
 
@@ -10,7 +10,7 @@ Study code and data are **not in the repo** (a one-off scratch study; ask Krithi
 | **Recommended** | **0.35** | 0 | **0.68** | **22.5 deg** | 0.698 m (52 mm under the 0.75 m cap) |
 | Runner-up | 0.30 | 0 | 0.68 | 20.0 deg | 0.697 m |
 
-Pose = centre of the camera body in `base_footprint`. In `base_link`: (0.3517, 0, 0.1903), pitch 23.01 deg (base_link itself sits 0.51 deg nose-up). Full poses and quaternions: `camera_pose.json`.
+Pose = centre of the camera body in `base_footprint`. In `base_link`: (0.3517, 0, 0.1903), pitch 23.01 deg (base_link itself sits 0.51 deg nose-up). The URDF pose is in `model_keshav.json` (`camera`).
 
 Recommended pose, measured:
 - **No self-occlusion**: 0 % of depth rays hit the rover, and still 0 % with the rover pitched 5 deg nose-down.
@@ -63,7 +63,7 @@ The selection then minimised the blind edge in the wheel track. Of 375 poses, 14
 - Marker size at 8 m: 0.35 m / 8 m is about 36 px on the 1280 px RGB (90 deg HFOV). Enough for ArUco/AprilTag.
 - Larger body pitch, for example on the berm face, needs re-sighting from flat sand.
 
-## Pose sweep (excerpt; all 375 in sweep.json)
+## Pose sweep (excerpt of the 375 poses)
 
 x, z = camera centre in base_footprint (m). "max" = cap-limited height. "+5" = rover pitched 5 deg nose-down. "-5" = nose-up.
 
@@ -111,9 +111,7 @@ x, z = camera centre in base_footprint (m). "max" = cap-limited height. "+5" = r
   - suspension articulation (the +-5 deg body-pitch cases approximate it);
   - the depth origin's 47.5 mm lateral offset (left imager).
 
-## Files
+## Figures
 
-- `fig1_footprint.png`: top-down coverage and crater quality, recommended pose.
-- `fig2_side.png` and `fig2b_side_zoom.png`: FOV wedges, rover, ground, marker sight lines.
-- `fig3_sweep.png`: metrics vs pitch and height.
-- `camera_pose.json`: the chosen pose and the attachment surface.
+- `camera_fig1_footprint.png`: top-down coverage and crater quality, recommended pose.
+- `camera_fig2_side.png`: FOV wedges, rover, ground, marker sight lines.

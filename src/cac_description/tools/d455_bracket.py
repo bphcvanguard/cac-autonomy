@@ -1,7 +1,7 @@
 """FreeCADCmd script: D455 camera bracket for the rover's front top cross member.
 
 All dimensions in mm, in the rover's base_link frame (x forward, y left, z up), so the exported
-part drops straight into the URDF. Pose from /home/kpoola/cac-e2e/cammount (camera centre
+part drops straight into the URDF. Pose from cad/camera_mount_study.md (camera centre
 (351.7, 0, 190.3) in base_link, pitched 23.0 deg nose-down).
 
 One printed PLA part:

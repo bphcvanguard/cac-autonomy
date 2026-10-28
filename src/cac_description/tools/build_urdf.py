@@ -22,9 +22,6 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from classify import centre, link_of  # noqa: E402,I100
-
 MM = 0.001
 WHEEL_R, WHEEL_W = 0.110, 0.060
 ROCKER_PIVOT = {'right': np.array([385.1, 0.5, 169.0]) * MM,
@@ -61,6 +58,13 @@ def kind(link):
         if link.endswith(k) or link == k:
             return k
     return 'base_link'
+
+
+
+def centre(r):
+    """Centre of a part's bounding box (mm)."""
+    b = r['bbox_mm']
+    return np.array([(b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2])
 
 
 def read_stl(fn):
@@ -396,9 +400,9 @@ def main():
                     help='which CAD end is the front (default -x: wheel/rod 1 end)')
     ap.add_argument('--total-mass', type=float, default=None,
                     help='weighed rover mass (kg), camera included')
-    ap.add_argument('--model', default=None,
-                    help="JSON with pivots (mm, this tool's CAD convention) and material "
-                         'densities for a CAD file other than 01Design_25')
+    ap.add_argument('--model', required=True,
+                    help="JSON with pivots (mm, this tool's CAD convention), the camera and "
+                         'the source file name (cad/model_keshav.json)')
     ap.add_argument('--source-name', default=None,
                     help='STEP file name for the URDF header (default: from the model file)')
     ap.add_argument('--mirror-from', choices=('left', 'right'), default=None,
@@ -406,8 +410,8 @@ def main():
                          '(internal CAD sense: left = CAD +y). Use when one side has newer joints')
     a = ap.parse_args()
 
-    model_source = load_model(a.model) if a.model else None
-    source_name = a.source_name or model_source or '01Design_25.step'
+    model_source = load_model(a.model)
+    source_name = a.source_name or model_source
     rows = json.load(open(a.parts_json))
     index = json.load(open(os.path.join(a.parts_dir, 'index.json')))
     files = {}
@@ -421,7 +425,9 @@ def main():
         k = used.get(lbl, 0)
         used[lbl] = k + 1
         tris = read_stl(os.path.join(a.parts_dir, files[lbl][k]))
-        parts.append((r['link'] if 'link' in r else link_of(r), tris, r))
+        if 'link' not in r:
+            sys.exit(f'{lbl}: no link assigned (run tools/prep_keshav.py first)')
+        parts.append((r['link'], tris, r))
     if a.mirror_from:
         parts = mirror_side(parts, a.mirror_from)
 

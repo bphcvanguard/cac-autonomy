@@ -188,11 +188,11 @@ Steps 1–2 need FreeCAD (flatpak `org.freecad.FreeCAD`); steps 3–5 need Pytho
 STEP="/path/to/NEW JOINTS KESHAV ASSEMBLY.step"; W=/tmp/cad_work      # scratch folder
 FC="flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD"
 # 1. list every solid part (placement, size, volume)
-$FC tools/inspect_step.py "$STEP" cad/parts_keshav_raw.json
+$FC tools/inspect_step.py "$STEP" $W/parts_raw.json
 # 2. one STL per part, in metres, plus index.json
 $FC tools/export_parts.py "$STEP" $W/parts_raw
 # 3. rotate into the generator's frame, drop duplicates and hardware < 1 cm^3, assign links + materials
-python3 tools/prep_keshav.py cad/parts_keshav_raw.json $W/parts_raw $W/prep
+python3 tools/prep_keshav.py $W/parts_raw.json $W/parts_raw $W/prep
 # 4. build both URDFs, meshes and urdf/build_summary.json  (OVERWRITES urdf/ and meshes/)
 python3 tools/build_urdf.py $W/prep/parts.json $W/prep/parts_m . \
   --model cad/model_keshav.json --mirror-from left --front=-x \
