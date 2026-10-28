@@ -30,7 +30,7 @@ gz sim -s -r <world>      # headless server, no GUI
 gz sim -s -r --headless-rendering <world>   # headless, but cameras/LiDAR still render (slow PCs)
 ```
 
-The worlds select bullet-featherstone themselves (no `--physics-engine` needed); see "Physics engine".
+The worlds select their physics engine themselves (DART by default; no `--physics-engine` needed); see "Physics engine".
 
 **Give every Gazebo its own partition.** Gazebo finds other Gazebo instances on the same network
 automatically, so two teammates on the same Wi-Fi (or two sims on one PC) silently connect: your
@@ -66,7 +66,7 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
 | `--sand-collision mesh\|tiles` | override `sand.collision` (default `tiles`: flat sand is boxes, craters are mesh patches). `mesh`: one collision mesh with the tilled relief; on bullet-featherstone ~40 % slower physics, on dart friction-inert. See "How the sand drives" |
-| `--physics-engine bullet-featherstone\|dart` | override `physics.engine` (default `bullet-featherstone`: our rover's mimic joints need it). Sets `<physics type>` and the Physics system's `<engine>` plugin. See "Physics engine" |
+| `--physics-engine dart\|bullet-featherstone` | override `physics.engine` (default `dart`: it skid-steers our rover; bullet-featherstone enforces mimic joints but cannot turn). Sets `<physics type>` and the Physics system's `<engine>` plugin. See "Physics engine" |
 | `--vary-appearance` | off by default. Seeded change of the look only: light level, key direction, ambient, colour temperature, sand tint/brightness/contrast, rock palette, wall colour. Geometry, collision, layout and truth stay byte-identical. Ranges (all ASSUMED) in `arena.yaml` `appearance:` |
 | `--appearance-seed K` | seed for the look only (implies `--vary-appearance`); default is the layout seed, so "seed 7" stays one fixed scene |
 
@@ -145,12 +145,18 @@ Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for 
 
 ## Physics engine
 
-The worlds run on **bullet-featherstone** by default (`physics.engine` in `arena.yaml`, or
-`generate_arena --physics-engine dart`). It is a team decision driven by our rover: the
-`cac_description` rocker-bogie differential is URDF mimic joints, and gz-sim 8's default dartsim
-does not support mimic constraints ("the chosen physics engine does not support mimic
-constraints"). On dart the rover tips over (measured here: pitch -34.4 deg in the arena);
-bullet-featherstone enforces the mimics and it stands level.
+The worlds run on **DART** by default (`physics.engine` in `arena.yaml`, or
+`generate_arena --physics-engine bullet-featherstone`). It is a team decision made from
+measurements with the real rover (`cac_description`, numbers below): DART skid-steers it, and
+bullet-featherstone does not.
+
+- **DART ignores URDF mimic joints** ("the chosen physics engine does not support mimic
+  constraints"). The full `rover.urdf` tips over (pitch -34 deg). So the team drives
+  `rover_sim.urdf`: rockers and differential bar fixed, bogies free. DART also drops closed
+  kinematic loops, so a real linkage differential is not possible there either.
+- **bullet-featherstone enforces the mimic differential** (full `rover.urdf`), but skid-steer
+  turning is broken on it (table below). Use it for suspension or differential studies. Do not
+  evaluate turning on it.
 
 **`<physics type>` alone does not pick the engine in gz-sim 8.** Measured with `gz sim -v 4`:
 a world with `type="bullet-featherstone"` and a bare Physics plugin still loaded
@@ -159,17 +165,16 @@ Physics system:
 
 ```xml
 <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
-  <engine><filename>gz-physics-bullet-featherstone-plugin</filename></engine>
+  <engine><filename>gz-physics-dartsim-plugin</filename></engine>
 </plugin>
 ```
 
-With that, plain `gz sim -r arena.sdf` loads bullet-featherstone; you do **not** need
-`--physics-engine` on the command line. `gz sim --physics-engine gz-physics-dartsim-plugin ...`
-still overrides the world file (measured), for a one-off dart run. All 12 installed worlds load
-on bullet-featherstone with 0 `[Err]` / 0 `[Wrn]` (`-v 4`; it prints one `[Dbg]` that
-`CollisionPairMaxContacts` is unsupported).
+With that, plain `gz sim -r arena.sdf` loads the engine the world names; you do **not** need
+`--physics-engine` on the command line. `gz sim --physics-engine <plugin> ...` still overrides
+the world file (measured). All 12 installed worlds load headless with 0 `[Err]` / 0 `[Wrn]`
+(`-v 4`).
 
-Speed, measured with the `cac_description` rover spawned in the start zone and shuttling at
+Speed, measured on bullet-featherstone with the rover spawned in the start zone and shuttling at
 0.2 m/s (gz `DiffDrive`), headless, 2 pinned cores (`--cpuset-cpus 0,1`), CPU only
 (`LIBGL_ALWAYS_SOFTWARE=1`), RTF over 20 s:
 
@@ -179,102 +184,80 @@ Speed, measured with the `cac_description` rover spawned in the start zone and s
 | dense seed 16 | 5.15 / 5.22 / 5.40 | 3.07 | 1.00 |
 
 On bullet-featherstone the whole-arena mesh is ~40 % slower than `tiles`, so `tiles` stays the
-default for speed as well as friction. (dart with the same rover ran 3.7-6.0 uncapped, but the
-rover had tipped over, so that is not a like-for-like number.)
+default for speed as well as friction. (DART with the tipped full rover ran 3.7-6.0 uncapped; not
+a like-for-like number.)
 
 ## How the sand drives (measured in this sim)
 
 **The engine decides how sand friction works.** Measured by tilting gravity to tan 0.5 (a block
 slides when its effective mu < 0.5) with 0.2 m blocks on the generated schematic arena:
 
-| | bullet-featherstone (default) | dart |
+| | dart (default) | bullet-featherstone |
 |---|---|---|
-| Tag it reads | `<bullet><friction>` / `<friction2>` only (`<ode><mu>` alone: ignored, stays at 1.0) | `<ode><mu>` / `<mu2>` only |
+| Tag it reads | `<ode><mu>` / `<mu2>` only | `<bullet><friction>` / `<friction2>` only (`<ode><mu>` alone: ignored, stays at 1.0) |
 | Sand on the tiles' boxes | honoured | honoured |
-| Sand on a mesh (crater patches, `--sand-collision mesh`) | honoured (sand mu 0.3 on the mesh: block slides) | INERT: DART default 1.0 (`AttachMeshShape` drops `<surface>`) |
-| Combining sand and wheel/block mu | ~0.7 x sand x block (product): block mu 1.0 holds at sand 0.75 and 0.8, sticks after 0.18 m at 0.70, slides at 0.68 and below; sand 1.0 x block 0.55 or 0.6 slides; symmetric in the two, same at 45 deg | min(sand, block): sand 0.5 holds, 0.45 slides; 0.6 x 0.6 holds |
+| Sand on a mesh (crater patches, `--sand-collision mesh`) | INERT: DART default 1.0 (`AttachMeshShape` drops `<surface>`) | honoured (sand mu 0.3 on the mesh: block slides) |
+| Combining sand and wheel/block mu | min(sand, block): sand 0.5 holds, 0.45 slides; 0.6 x 0.6 holds | ~0.7 x sand x block (product): block mu 1.0 holds at sand 0.75 and 0.8, slides at 0.68 and below |
 | A collision with no friction tag (e.g. the `cac_description` wheels) | counts as 1.0 | counts as 1.0 |
-| Anisotropic `fdir1` + `mu2`/`friction2` (1.0 along x, 0.3 across) | honoured (holds along, slides across) | honoured |
+| Anisotropic `fdir1` + `mu2`/`friction2` | honoured | `friction2` honoured along the link's own y axis; `fdir1` is ignored |
+| `<torsional><coefficient>` (SDF default 1.0) | not read | becomes Bullet **spinning friction**, a lever arm in metres; at the default it locks the rover's yaw |
 
-So every sand collision carries the friction twice, as `<ode>` and as `<bullet>`, and the
-tilt test still passes on both engines: box mu 1.0 on `tiles` slides at sand mu 0.3 and holds at
-sand mu 0.9. On mesh mode it slides at 0.3 on bullet and holds at both on dart.
-
-**What it means:** with the default bullet-featherstone and the rover's untagged wheels (1.0),
-the effective mu on sand is about 0.7 x `terrain.friction` = ~0.35 at the shipped 0.5, not 0.5.
-If you set wheel friction on the robot, it multiplies (wheel 0.5 on sand 0.5 gives ~0.18), it does
-not take the minimum as on dart.
+Every sand collision carries the friction twice, as `<ode>` and as `<bullet>`, and
+`terrain.torsional` is 0 (harmless on DART, required on bullet-featherstone). The tilt test passes
+on both engines: box mu 1.0 on `tiles` slides at sand mu 0.3 and holds at 0.9. On DART the effective
+mu on sand is `min(terrain.friction, wheel)`; on bullet it is ~0.7 x the product, so ~0.35 at the
+shipped 0.5 with untagged wheels.
 
 **Craters** (`tiles`: each crater is a mesh patch out to its outer radius + 5 cm; the tilled relief
 (+/- 1.2 cm) is dropped from the collision and stays in the picture only). A 5 cm sphere dropped
-on each crater centre rests 0.6-1.3 mm above `-depth_eff + r` on both engines (schematic: 3
-craters, `crater_field`: 8). **Rocks are solid** on bullet-featherstone: blocks slid into the 9
-schematic rocks either stopped flush against them (6, front face 0.11-0.17 m short of the rock
-centre) or were deflected round them (3); none passed through.
+on each crater centre rests 0.6-1.3 mm above `-depth_eff + r` on both engines. **Rocks are solid**
+on bullet-featherstone: blocks slid into the 9 schematic rocks either stopped flush against them
+or were deflected round them; none passed through. On DART a cylinder wheel gets 2 contact points
+on a box and 1 on the mesh. `<max_contacts>` is not honoured by either engine.
 
-On dart a cylinder wheel gets 2 contact points on a box and 1 on the mesh. `<max_contacts>` is
-not honoured by either engine.
+### The real rover on sand
 
-### Older drive measurements (dart, scratch test rover)
+Measured with the `cac_description` rover (6 wheels r 0.11 m, wheelbase 1.16 m, track 0.57 m,
+27.9 kg ASSUMED) in `generate_arena --layout empty`, shipped sand (`tiles`, mu 0.5). The drive is a
+**test-only** gz `DiffDrive` (3 left + 3 right wheel joints, `wheel_separation` 0.57,
+`wheel_radius` 0.11, 20 N m per wheel); odometry is the plugin's, truth is the model pose. Not
+committed: the robot plugins belong to the Platform pod.
 
-Everything below was measured on **dart** before the switch, with a scratch test rover, and has
-**not** been re-run on bullet-featherstone. The friction rules differ (table above), so treat the
-numbers as the shape of the problem, not as current values. Dart, test rover shuttling, 3 runs:
-uncapped RTF schematic 7.2 (tiles) vs 7.8 (mesh); dense seed 16 6.5 vs 8.2.
+**DART, `rover_sim.urdf`** (rockers and diff bar fixed, bogies free; wheels mu1 0.2 lateral / mu2
+1.0 rolling, `fdir1` along the axle):
 
-Test rover (scratch only, not in this package): 0.6 x 0.3 m, 18.4 kg, 4 wheels r 0.08 m,
-wheelbase 0.40 m, track 0.36 m, gz `DiffDrive` skid-steer, 5 N m per wheel.
-
-Mesh collision (`--sand-collision mesh`), sand mu inert, so the effective mu is the wheel mu:
-
-| Run | Odometry vs truth |
+| Run | Result |
 |---|---|
-| Straight 4 m at 0.2 m/s, flat, any sand mu or wheel mu 0.1-1.0 | 0.01 % distance, < 0.1 deg heading |
-| Straight 4 m across an 11 cm deep, 50 cm crater | 0.2 % distance |
-| 360 deg in place, wheel mu 1.0 (the default) | rover does not turn (0 deg); odometry says 160 deg |
-| 360 deg in place, wheel mu 0.5 | turns 150 deg; odometry says 360 deg |
-| 360 deg in place, wheel mu 0.4 sideways / 0.6 rolling (`fdir1` = axle) | turns 250-290 deg; odometry says 360 deg |
-| Robot-side `WheelSlip` system, compliance 1 / 1 (not tuned) | 1.3 % distance, but 0.4 m sideways and 10 deg heading drift over 4 m, invisible to odometry |
+| 360 deg in place | **360.4 deg** (odometry exact at track 0.570 m) |
+| Arc at 1 m / 0.5 m / 2 m commanded radius | R 1.036 / 0.543 / 2.033 m |
+| Straight 4 m | exact |
+| 11 cm deep, 50 cm crater under the left wheels | crosses 6/6, roll 1.9 deg, pitch 2.0 deg |
+| Off-centre boulder | climbs, roll 6.2 deg, pitch 9.9 deg |
+| Steep 14 cm boulder, head-on | stalls 8/8, on any friction setting |
+| Full `rover.urdf` (mimics ignored) | tips over, pitch -34 deg |
 
-With wheel mu 0.5, or with 0.4 / 0.6, the rover drove out of the 11 cm crater from its centre and
-turned in place inside it.
+**bullet-featherstone, full `rover.urdf`** (mimic differential enforced; held to 0.06 deg in every run):
 
-`tiles` collision, sand mu 0.5 (now effective on flat sand):
-
-| Run | Odometry vs truth |
+| Run | Result |
 |---|---|
-| Straight 4 m at 0.2 m/s, flat, wheel mu 0.5 or 1.0 | 0.00 % distance, 0.0 deg heading |
-| Straight 4 m across the 50 cm crater | 0.3 % distance, 0.5 deg heading (the in-place turn after it: 61 deg, marginal) |
-| 360 deg in place, wheel mu 1.0 or 0.5, or sand mu 0.3 / 0.9 | rover does not turn (0 deg); odometry says 360 deg (wheels spin) |
-| 360 deg in place, wheel mu 0.4 sideways / 0.6 rolling (`fdir1` = axle) | turns 316 deg; odometry says 360 deg |
-| 360 deg in place, wheelbase 0.30 < track 0.40, wheel mu 1.0 | turns 247 deg (on the mesh: 29 deg) |
+| 360 deg in place, default sand torsional | **0.2 deg** whatever the wheel friction; odometry says 360 |
+| Same, sand and wheel torsional 0 | 53-93 deg (stalls near a world axis) |
+| Arc, 1 m commanded | R 4.65-87 m, depending on wheel friction |
+| 11 cm crater, default torsional | stuck |
+| Off-centre boulder | rolled 57-61 deg |
 
-So no: with isotropic friction the test rover still does not turn in place, at any mu. That is plain
-Coulomb physics, not a sim bug. Its wheelbase (0.40 m) is longer than its track (0.36 m), so the
-sideways scrub of the wheels has a longer lever than the drive force, at any shared mu. The
-wide-track rover does turn. The old "turns 150 deg at wheel mu 0.5" came from the mesh's single
-contact point per wheel.
+Bullet-featherstone fixes the friction directions to world x / y instead of the slip direction
+(Bullet 3.24, `btMultiBodyConstraintSolver`), which is why turning stalls near an axis. At the
+default torsional, spinning friction (a lever arm in metres) also resists every yaw twist.
 
-Seams (tiles): a 7.6 m diagonal drive (13.7 deg) across 3 box-box seams, 4 box-patch seams and two
-craters, at 0.2 and 0.5 m/s. On flat sand the body height held at 0.0800 m (spread < 0.1 mm), speed
-0.200 / 0.500 m/s, pitch 0.00 deg: no seam bumps or snags. Through the craters: body dip 4.7-5.5 mm,
-pitch up to 5.4 deg, speed 0.18-0.23 m/s (at 0.2 m/s), the same as the mesh (dip 4.7-7.2 mm, 5.4 deg,
-0.18-0.22 m/s). The rover crossed the full 7.6 m in both modes.
+**Starting point for the Platform pod** (measured facts, not tuned values):
+- Drive `rover_sim.urdf` on DART with `wheel_separation` 0.57; odometry then matches truth.
+- Isotropic wheel friction cannot skid-steer this rover on either engine (lateral above ~0.3 gives
+  0 deg). The wheels need anisotropic friction: `mu2` 1.0 rolling, `mu1` 0.2 lateral, `fdir1` on the axle.
+- Straight-line odometry is exact here. That says nothing about real sand.
+- DART cannot do a closed-loop linkage, so the differential stays locked there.
 
-What this means for the robot team:
-- **Straight-line wheel odometry is near perfect in sim (< 0.3 %), with either collision.** Real dry
-  sand gives ~5-10 % of distance. Coulomb friction alone never makes a flat-ground slip like that.
-  `tiles` makes the friction coefficient real on flat sand, but there is still no rolling
-  resistance, sinkage, bulldozing or tilled relief under the wheels in the sim. So localisation
-  tested here will look better than it will be on real sand. Add the error on purpose: a scale error plus heading drift in the odometry
-  path, or tune the robot-side `gz::sim::systems::WheelSlip` plugin.
-- **Turning in place is where the error shows up.** With the geometric track, the odometry
-  overstates in-place yaw by 70-210 deg per turn. Calibrate an effective track, or take yaw from
-  the IMU. Real skid-steer robots have the same problem.
-- **Set wheel friction on the robot.** A skid-steer longer than it is wide does not turn in place
-  with isotropic friction (on `tiles`, at any mu; on the mesh, at wheel mu 1.0). Use anisotropic
-  friction with `<fdir1>` along the axle: lower `<mu>` sideways than `<mu2>` rolling.
-- **Whether it turns depends on the friction pyramid's orientation and the contact count.** On the
-  mesh at wheel mu 0.5 with `<fdir1>` along the axle (isotropic), the rover did not turn at all.
-  Without `<fdir1>` it turned 150 deg. On `tiles` it did not turn either way.
-  Re-measure on the real robot on real sand. These numbers show the shape of the problem only.
+**Not simulated:** rolling resistance, sinkage, bulldozing, tilled relief under the wheels, and
+any slip on sand beyond Coulomb friction. Real dry sand gives ~5-10 % straight-line odometry error;
+add it on purpose (a scale error and heading drift on the odometry path, or the robot-side
+`WheelSlip` plugin) when testing localisation.

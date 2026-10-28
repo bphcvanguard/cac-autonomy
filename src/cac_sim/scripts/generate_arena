@@ -54,9 +54,9 @@ def main(argv=None):
                     help='override sand.collision in arena.yaml (tiles: flat sand = boxes that '
                          'honour terrain.friction; README "How the sand drives")')
     ap.add_argument('--physics-engine', choices=('bullet-featherstone', 'dart'), default=None,
-                    help='override physics.engine in arena.yaml (default bullet-featherstone: '
-                         'the rover URDF needs mimic joints, which dartsim ignores; README '
-                         '"Physics engine")')
+                    help='override physics.engine in arena.yaml (default dart: skid-steer '
+                         'turning works; bullet-featherstone enforces mimic joints but cannot '
+                         'turn; README "Physics engine")')
     ap.add_argument('--vary-appearance', action='store_true',
                     help='seeded lighting/colour variation (appearance: in arena.yaml); '
                          'geometry and truth unchanged')

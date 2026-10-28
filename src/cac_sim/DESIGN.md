@@ -56,7 +56,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
-               [--config arena.yaml] [--sand-collision mesh|tiles] [--physics-engine bullet-featherstone|dart] [--markers] [--marker-preset frame_inner|perimeter_walls]
+               [--config arena.yaml] [--sand-collision mesh|tiles] [--physics-engine dart|bullet-featherstone] [--markers] [--marker-preset frame_inner|perimeter_walls]
                [--setup-sheet] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
@@ -84,13 +84,14 @@ exit code 2; no world is written. Truth is generated only with `--out`: it is no
   Stream ids (all distinct; `test_rng_streams_distinct` checks seeds 0..20): layout obstacles `[s, 2]`,
   start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`, appearance variation `[appearance_seed, 70]` (`appearance.py`); geometry: textures 20-26 (sand etc.), crater
   rim `[s, 21, i]`, crater depth `[s, 22, i]`, rock shape `[s, 30, i]`, rock texture variants `[s, 50+k]`.
-- Physics engine (`physics.engine` in `arena.yaml`, default `bullet-featherstone`; CLI
-  `--physics-engine`). A team decision driven by the rover: `cac_description`'s rocker-bogie
-  differential is URDF mimic joints, which gz-sim 8's dartsim does not support (the rover tips
-  over). The world sets `<physics type>` AND the Physics system's
-  `<engine><filename>` (`gz-physics-bullet-featherstone-plugin` / `gz-physics-dartsim-plugin`): gz-sim 8 picks the engine
-  from the latter (or `gz sim --physics-engine`, which overrides the world file), never from the
-  type. Switching the engine changes only those two strings in `arena.sdf`
+- Physics engine (`physics.engine` in `arena.yaml`, default `dart`; CLI `--physics-engine`).
+  Chosen from measurements with the real rover: DART skid-steers it (360 deg in place, arcs of the
+  commanded radius) but ignores URDF mimic joints, so the team drives `rover_sim.urdf` (differential
+  locked). bullet-featherstone enforces the mimics but cannot turn the rover, so it is an option for
+  suspension studies only (README "Physics engine"). The world sets `<physics type>` AND the Physics
+  system's `<engine><filename>` (`gz-physics-dartsim-plugin` / `gz-physics-bullet-featherstone-plugin`):
+  gz-sim 8 picks the engine from the latter (or `gz sim --physics-engine`, which overrides the world
+  file), never from the type. Switching the engine changes only those two strings in `arena.sdf`
   (`test_engine_changes_only_the_physics_block`).
 - Sand collision (`sand.collision` in `arena.yaml`, default `tiles`; CLI `--sand-collision`).
   `tiles`: on the 8 cm collision grid, every cell touching the square of half-size

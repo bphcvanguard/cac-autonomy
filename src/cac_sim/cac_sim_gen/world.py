@@ -178,14 +178,17 @@ def _pipes(cfg):
     return out
 
 
-def _sand_surface(mu):
+def _sand_surface(mu, torsional=0.0):
     """Sand friction for both engines.
 
     dartsim reads <ode><mu>/<mu2>; bullet-featherstone reads ONLY <bullet><friction>/<friction2>
-    (measured: with <ode> alone bullet keeps its default 1.0).
+    (measured: with <ode> alone bullet keeps its default 1.0). <torsional><coefficient> becomes
+    bullet "spinning friction" (default 1.0 when absent); combined with the wheel's mu it pins a
+    skid-steer rover so it cannot turn or climb out of a crater. arena.yaml terrain.torsional.
     """
     return (f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode>'
             f'<bullet><friction>{_f(mu)}</friction><friction2>{_f(mu)}</friction2></bullet>'
+            f'<torsional><coefficient>{_f(torsional)}</coefficient></torsional>'
             '</friction></surface>')
 
 
@@ -200,8 +203,8 @@ PHYSICS_ENGINES = {
 
 
 def physics_engine(cfg):
-    """`physics.engine` from arena.yaml: 'bullet-featherstone' (default) or 'dart'."""
-    eng = (cfg.get('physics') or {}).get('engine', 'bullet-featherstone')
+    """`physics.engine` from arena.yaml: 'dart' (default) or 'bullet-featherstone'."""
+    eng = (cfg.get('physics') or {}).get('engine', 'dart')
     if eng not in PHYSICS_ENGINES:
         raise ValueError(f'physics.engine must be one of {sorted(PHYSICS_ENGINES)}, got {eng!r}')
     return eng
@@ -225,7 +228,7 @@ def _terrain(cfg, rects=None, patch=True):
     friction, plus the crater patch mesh when `patch` (friction as for 'mesh').
     """
     mu = cfg['terrain']['friction']
-    surf = _sand_surface(mu)
+    surf = _sand_surface(mu, cfg['terrain'].get('torsional', 0.0))
     if rects is None:
         col = ('<collision name="collision">'
                f'{_mesh_geom("meshes/terrain_collision.obj")}{surf}</collision>')

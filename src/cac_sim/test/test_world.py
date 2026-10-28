@@ -241,8 +241,8 @@ def test_physics_block_reflects_config(tmp_path, engine, plugin):
 
 
 def test_physics_default_and_cli_override(tmp_path):
-    assert config.load_config()['physics']['engine'] == 'bullet-featherstone'   # shipped default
-    for flag, want in ((None, 'bullet-featherstone'), ('dart', 'dart'),
+    assert config.load_config()['physics']['engine'] == 'dart'   # shipped default
+    for flag, want in ((None, 'dart'), ('dart', 'dart'),
                        ('bullet-featherstone', 'bullet-featherstone')):
         out = tmp_path / str(flag)
         args = ['--layout', 'empty', '--out', str(out)]
@@ -260,7 +260,7 @@ def test_physics_engine_rejects_unknown():
     with pytest.raises(ValueError):
         world.physics_engine(cfg)
     del cfg['physics']
-    assert world.physics_engine(cfg) == 'bullet-featherstone'
+    assert world.physics_engine(cfg) == 'dart'
 
 
 def test_engine_changes_only_the_physics_block(tmp_path):
@@ -410,16 +410,18 @@ GOLDEN_SDF_SHA256 = {
     # <engine><filename> to the Physics plugin + type="bullet-featherstone", and every sand
     # collision gains <bullet><friction>/<friction2>. Checked: reverting just those two strings
     # reproduces the previous hashes exactly (all four).
-    ('random', '3'): 'aa3055a55d00217e7b309714d48664d1ec0554c5679db968a776d71484ddd719',
-    ('schematic', None): '9cbfcdabc63c33f3618fd132848c1c7660240b99b12527d09be725531b964a93',
+    # 2026-10-28 final: default engine back to dart (type="dart" + dartsim plugin) and sand gains
+    # <torsional><coefficient>0 (terrain.torsional); all four hashes regenerated for those two changes.
+    ('random', '3'): '1f51f4c4176c6777b2995943e665a61c521063f95a44b2848d7e5259992d7e02',
+    ('schematic', None): '6c60dee88e3906ca0a383d818d3cd307adc791e9d564e7f91ff55791afe4ca5f',
 }
 # 2026-10-28 later: crater patches subdivided 3 x 3 (review: small bowls were ~2 cm short).
 # --sand-collision tiles = the DEFAULT since 2026-10-28: only the terrain <collision> elements
 # differ from mesh mode; the visual mesh, textures and truth are byte-identical
 # (test_tiles_change_only_...).
 GOLDEN_SDF_SHA256_TILES = {
-    ('random', '3'): 'e07843b735f68245e9fd1c12785dea5e6a3a52c5e4fca3a78db1b63fedcacfa5',
-    ('schematic', None): 'ba02f26ad853f279be9b46417f537d8718d20b53857d9484cc117984eaa8ca78',
+    ('random', '3'): 'd9da8709308da487aa8b73b81b3c491ae400f24766a7ece25e52c20a404f5907',
+    ('schematic', None): 'fb32ca64c63be08e8b3c91da844918fb20def89bd187d3aef9c5cb67733bfe3e',
 }
 
 

@@ -136,15 +136,15 @@ situational_cameras:
   - {name: sitcam_ne, position: [9.3, 5.3, 2.4], look_at: [4.5, 2.5, 0.0]}
 
 physics:
-  # Team decision, not a rulebook value (so not ASSUMED): driven by our rover. cac_description's
-  # rocker-bogie differential is URDF <mimic> joints; gz-sim 8's dartsim does not support mimic
-  # constraints ("the chosen physics engine does not support mimic constraints") and the rover
-  # tips over. bullet-featherstone enforces them.
-  #   bullet-featherstone (default) | dart
+  # Team decision, not a rulebook value (so not ASSUMED). Default DART: it skid-steers the real
+  # rover (360 deg in place, arcs of the commanded radius; the team drives rover_sim.urdf with the
+  # mimic differential locked). bullet-featherstone enforces mimics but cannot turn the rover
+  # (0.2 deg of 360 at default torsional): use it for suspension studies only. README "Physics engine".
+  #   dart (default) | bullet-featherstone
   # The world names the engine plugin in the Physics system (<engine><filename>): gz-sim 8 ignores
-  # <physics type> when it picks the engine. Override per run: generate_arena --physics-engine dart
-  # (or `gz sim --physics-engine gz-physics-dartsim-plugin`, which beats the world file).
-  engine: bullet-featherstone
+  # <physics type> when it picks the engine. Override per run: generate_arena --physics-engine bullet-featherstone
+  # (or `gz sim --physics-engine gz-physics-bullet-featherstone-plugin`, which beats the world file).
+  engine: dart
 
 sand:
   albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
@@ -154,8 +154,8 @@ sand:
   #     crater = a square mesh patch out to its outer radius + 5 cm. The tilled relief is visual
   #     only: the collision is flat outside the crater bowls.
   #   mesh: one collision mesh over the whole arena, tilled relief included.
-  # Friction (measured, README "How the sand drives"): bullet-featherstone (physics.engine default)
-  # honours terrain.friction on boxes AND meshes. dartsim drops <surface> on mesh collisions
+  # Friction (measured, README "How the sand drives"): bullet-featherstone honours terrain.friction
+  # on boxes AND meshes. dartsim (the default engine) drops <surface> on mesh collisions
   # (AttachMeshShape), so on dart terrain.friction only works on the tiles' boxes: that is why
   # tiles became the default. Physics cost: see README "Physics engine".
   #   Override per run: generate_arena --sand-collision mesh
@@ -173,6 +173,10 @@ terrain:
   #   dart: min(sand, wheel). Effective on the tiles' boxes only; INERT on mesh collisions
   #     (crater patches, sand.collision: mesh), where the sand is DART's default 1.0.
   friction: 0.5
+  # Spinning (torsional) friction of the sand. SDF defaults it to 1.0 when absent. Harmless on DART
+  # (not read there); REQUIRED on bullet-featherstone, where the default pinned the real rover (0.2 deg
+  # of a commanded 360, stuck in an 11 cm crater; README 'How the sand drives'). Keep 0.
+  torsional: 0.0
 
 situational_camera_sensor:
   # Sensor shared by both situational cameras above. ASSUMED (the rules give no spec).
