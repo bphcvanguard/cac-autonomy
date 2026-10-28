@@ -128,9 +128,12 @@ markers:
       - {id: 4, position: [0.40, 0.00, 0.35], yaw_deg: 90}  # south wall, faces +y
 
 situational_cameras:
-  # "Two situational awareness cameras will be available." Position ASSUMED: high in two corners.
-  - {name: sitcam_sw, position: [-0.3, -0.3, 3.0], look_at: [4.5, 2.5, 0.0]}
-  - {name: sitcam_ne, position: [9.3, 5.3, 3.0], look_at: [4.5, 2.5, 0.0]}
+  # "Two situational awareness cameras will be available." Positions ASSUMED. Analogue: the NASA
+  # Lunabotics Artemis Arena hangs its pan-tilt cameras on the overhead truss ~8 ft (2.4 m) above
+  # the regolith (static cameras at ~0.75 m and ~3 m). With only two, diagonal corners cover the
+  # whole field, so: two opposite corners, just outside the walls, 2.4 m up, aimed at the centre.
+  - {name: sitcam_sw, position: [-0.3, -0.3, 2.4], look_at: [4.5, 2.5, 0.0]}
+  - {name: sitcam_ne, position: [9.3, 5.3, 2.4], look_at: [4.5, 2.5, 0.0]}
 
 sand:
   albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
