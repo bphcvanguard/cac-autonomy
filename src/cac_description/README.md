@@ -84,15 +84,20 @@ Maximum detection distance (crater straight ahead, distance from the camera's gr
 
 Real D455 noise grows with range and is worse on bright sand than this constant 7 mm, so expect these distances to be a little shorter on the real rover.
 
-**Bracket.** `cad/d455_bracket.step` and `.stl` are one PLA part, about 130 cm³, in `base_link` coordinates. Its parametric FreeCAD source is `tools/d455_bracket.py`. It has three parts:
+**Bracket.** `cad/d455_bracket.step` and `.stl` are one printed part, about 161 cm³, in `base_link` coordinates. Its parametric FreeCAD source is `tools/d455_bracket.py`. A mechanical review checked fit, access, clearance, printability and strength (FreeCAD and mesh sweeps):
 
-- a **saddle** over the body's front top cross member (30 × 30 mm), clamped by **2 × M5 bolts** that run fore-aft under the member;
-- a **web** up to the camera plate;
-- a **plate** tilted 23°, with a 1/4-20 clearance hole and a head counterbore for the D455's tripod thread, and a back lip so the camera can't turn.
+- **Saddle:** sits over the body's front top cross member (30 × 30 mm), with 0.3 mm slide-on clearance fore-aft. It is clamped by **2 × M5 bolts** that run fore-aft just under the member, so they also stop it rotating.
+- **Web and plate:** 40 mm wide, so it prints with **no supports**. The plate is tilted 23° and has a back lip so the camera can't turn.
+- **Tripod hole:** 2.8 mm behind the camera's centre, where the D455's 1/4-20 thread is (from realsense-ros; **check with calipers**). The camera body then lands exactly on the URDF pose.
+- **Strength:** about 65× margin at 3 g shock; first bending mode about 90 Hz.
+- **Clearance:** at least 98 mm to anything as the rockers and bogies move.
 
-**Printing and fitting:**
-- Print with the saddle's open side down.
-- Use a 1/4-20 screw no longer than plate + 5 mm. The plate is 6 mm thick; check the D455's thread depth.
+**Printing and assembly:**
+
+- **Material:** print in **PETG or ASA**, not PLA. PLA softens at about 55 °C in the sun and creeps under bolt load.
+- **Print:** saddle opening down, with a brim. The part's centre of mass is outside its small footprint on the bed.
+- **M5:** 2 × M5 × 50 bolts with Ø15 fender washers and nyloc nuts, tightened to **≤ 1 N·m** (more would crush the plastic).
+- **Camera screw:** 1/4-20 × 3/8" socket head. The grip is only about 4 mm.
 
 **URDF.**
 - `camera_mount` (the bracket) and `camera_link` (the D455 body) are fixed to the body.
@@ -106,7 +111,7 @@ Real D455 noise grows with range and is worse on bright sand than this constant 
 
 **To verify on the real camera:**
 - The D455's size (124 × 26 × 29 mm assumed) and mass (0.39 kg assumed).
-- The optical-frame offsets. On the real robot, use `realsense2_description` for the exact extrinsics; here the optical frames sit at the body centre.
+- The optical frames. Depth sits 47.5 mm left of the body centre, at the left imager (from realsense-ros); colour is at the centre (unknown). On the real robot, use `realsense2_description` for the exact extrinsics.
 - Re-run the study once the digging tool is modelled: a bucket in front could block the lower view.
 
 **Later:** a raising and rotating mast is allowed after the start (up to +1.75 m). The bracket's plate and tripod interface can move onto it unchanged.

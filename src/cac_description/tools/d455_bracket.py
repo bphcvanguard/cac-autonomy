@@ -28,6 +28,7 @@ OUT = sys.argv[-1]
 MX0, MX1 = 246.2, 276.2          # back / front faces
 MZ0, MZ1 = 69.9, 99.9            # bottom / top faces
 WALL = 5.0                        # saddle wall thickness
+FIT = 0.3                         # slide-on clearance per side, fore-aft (FDM prints undersize)
 CLAMP_W = 60.0                    # saddle length along y
 DROP = 12.0                       # walls hang this far below the member for the M5 bolts
 M5_CLEAR = 5.5
@@ -37,13 +38,17 @@ CAM_C = V(351.7, 0.0, 190.3)
 PITCH = math.radians(23.0)
 CAM_H = 29.0
 PLATE_T = 6.0                     # plate thickness
-PLATE_U = 30.0                    # plate length along camera x (camera depth 26 + margin)
-PLATE_W = 70.0                    # plate width along y
+PLATE_U = 35.0                    # plate length along camera x (camera depth 26 + lip + margin)
+PLATE_W = 40.0                    # plate width along y (= web: no overhanging wings to support)
 LIP_H = 6.0                       # back lip height above the plate
 LIP_T = 4.0
 TRIPOD_CLEAR = 6.8                # 1/4-20 UNC clearance
 CBORE_D, CBORE_DEPTH = 12.0, 2.0  # screw head counterbore under the plate
-WEB_W = 30.0
+WEB_W = 40.0
+# D455 1/4-20 hole: centred in width, 15.8 mm behind the front face = 2.8 mm behind the body
+# centre (realsense-ros _d455.urdf.xacro mount offset 0.0158; CHECK WITH CALIPERS). The hole sits
+# here so the camera BODY CENTRE lands on the URDF pose.
+TRIPOD_U = -2.8
 
 ex = V(math.cos(PITCH), 0, -math.sin(PITCH))     # camera x (forward, tilted down)
 ez = V(math.sin(PITCH), 0, math.cos(PITCH))      # camera z (up, tilted forward)
@@ -63,15 +68,17 @@ def prism(points_xz, y0, y1):
 
 hw = CLAMP_W / 2
 # saddle: outer U minus the member
-outer = Part.makeBox(MX1 - MX0 + 2 * WALL, CLAMP_W, (MZ1 - MZ0) + WALL + DROP,
-                     V(MX0 - WALL, -hw, MZ0 - DROP))
-member = Part.makeBox(MX1 - MX0, CLAMP_W + 2, (MZ1 - MZ0) + DROP + 1,
-                      V(MX0, -hw - 1, MZ0 - DROP - 1))
+outer = Part.makeBox(MX1 - MX0 + 2 * (WALL + FIT), CLAMP_W, (MZ1 - MZ0) + WALL + DROP,
+                     V(MX0 - WALL - FIT, -hw, MZ0 - DROP))
+member = Part.makeBox(MX1 - MX0 + 2 * FIT, CLAMP_W + 2, (MZ1 - MZ0) + DROP + 1,
+                      V(MX0 - FIT, -hw - 1, MZ0 - DROP - 1))
 saddle = outer.cut(member)
-# M5 bolt holes fore-aft under the member, at y = +-18
+# M5 bolt holes fore-aft under the member, at y = +-18, just under it so the bolts bear on the
+# member's bottom face (anti-rotation) and leave a 6 mm ligament below
+BOLT_Z = MZ0 - M5_CLEAR / 2 - 0.5
 for y in (-18.0, 18.0):
-    hole = Part.makeCylinder(M5_CLEAR / 2, MX1 - MX0 + 2 * WALL + 2,
-                             V(MX0 - WALL - 1, y, MZ0 - DROP / 2), V(1, 0, 0))
+    hole = Part.makeCylinder(M5_CLEAR / 2, MX1 - MX0 + 2 * (WALL + FIT) + 2,
+                             V(MX0 - WALL - FIT - 1, y, BOLT_Z), V(1, 0, 0))
     saddle = saddle.cut(hole)
 
 # plate (tilted) as a polygon prism in the camera xz plane
@@ -90,8 +97,9 @@ web = prism([(MX0 - WALL, top_z), (MX1 + WALL, top_z), (at(pu, -pt).x, at(pu, -p
 body = saddle.fuse(web).fuse(plate).fuse(lip).removeSplitter()
 # 1/4-20 clearance through the plate along camera z, plus head counterbore from below
 axis = ez
-hole = Part.makeCylinder(TRIPOD_CLEAR / 2, PLATE_T + 40, P - axis * (PLATE_T + 30), axis)
-cbore = Part.makeCylinder(CBORE_D / 2, 30 + CBORE_DEPTH, P - axis * (PLATE_T + 30), axis)
+H = P + ex * TRIPOD_U
+hole = Part.makeCylinder(TRIPOD_CLEAR / 2, PLATE_T + 40, H - axis * (PLATE_T + 30), axis)
+cbore = Part.makeCylinder(CBORE_D / 2, 30 + CBORE_DEPTH, H - axis * (PLATE_T + 30), axis)
 body = body.cut(hole).cut(cbore)
 
 os.makedirs(OUT, exist_ok=True)
@@ -105,3 +113,10 @@ print('volume_cm3 %.1f' % (body.Volume / 1000))
 print('bbox_mm x %.1f..%.1f y %.1f..%.1f z %.1f..%.1f' % (bb.XMin, bb.XMax, bb.YMin, bb.YMax,
                                                           bb.ZMin, bb.ZMax))
 print('valid', body.isValid(), 'solids', len(body.Solids))
+# fit checks: camera body (placed by its centre) vs bracket; saddle vs member
+cam = Part.makeBox(26, 124, 29, V(-13, -62, -14.5))
+cam.rotate(V(0, 0, 0), V(0, 1, 0), math.degrees(PITCH))
+cam.translate(CAM_C)
+print('camera overlap mm3 %.3f' % body.common(cam).Volume)
+real_member = Part.makeBox(MX1 - MX0, CLAMP_W, MZ1 - MZ0, V(MX0, -hw, MZ0))
+print('member overlap mm3 %.3f' % body.common(real_member).Volume)

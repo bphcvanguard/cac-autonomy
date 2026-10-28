@@ -69,6 +69,12 @@
       "near": 0.52,
       "far": 6.0,
       "noise": 0.007
-    }
+    },
+    "depth_offset": [
+      0.0,
+      0.0475,
+      0.0
+    ],
+    "_note_offsets": "Depth comes from the D455's left imager, ~47.5 mm left of the body centre (realsense-ros _d455.urdf.xacro; UNVERIFIED against Intel). Colour offset left at 0 (unknown). On the real robot use realsense2_description's frames."
   }
 }
