@@ -13,9 +13,11 @@ Gazebo Harmonic model of the 9 x 5 m CAC 2027 sand arena (tilled sand, boulders,
 - **SE(2) path check:** a check that a 1.5 x 0.75 m rover can actually drive AND turn through the field.
 - **Seed:** a number that fixes the random layout. Same seed, same arena.
 
-| Robot view from the start zone | Overview | Layout (`truth/map.png`) |
-|---|---|---|
-| ![robot view](docs/arena_robot_view.png) | ![overview](docs/arena_overview.png) | ![map](docs/arena_map.png) |
+| Overview, rover in the start zone | Rover close-up (the team's rover, `cac_description`) |
+|---|---|
+| ![overview](docs/arena_overview.png) | ![rover](docs/arena_rover.png) |
+| **From the rover's front, 0.6 m up** | **Layout map (`truth/map.png`)** |
+| ![robot view](docs/arena_robot_view.png) | ![map](docs/arena_map.png) |
 
 ## Run a world
 
