@@ -1,0 +1,63 @@
+{
+ "front": "-x",
+ "total_mass_kg": 27.856,
+ "masses_kg": {
+  "base_link": 4.455,
+  "diff_bar": 1.179,
+  "right_rocker": 3.018,
+  "left_rocker": 3.037,
+  "right_bogie": 5.07,
+  "left_bogie": 5.071,
+  "right_rear_wheel": 1.004,
+  "right_middle_wheel": 1.004,
+  "right_front_wheel": 1.004,
+  "left_rear_wheel": 1.004,
+  "left_middle_wheel": 1.004,
+  "left_front_wheel": 1.004
+ },
+ "bogie_stance_deg": {
+  "left": 2.355,
+  "right": 2.376
+ },
+ "stance_pitch_deg": 5.99,
+ "base_link_height_m": 0.72,
+ "diff_ratio": 0.4124,
+ "extent_in_stance_m": [
+  1.3785,
+  0.67,
+  0.924
+ ],
+ "top_above_ground_m": 0.9237,
+ "wheel_centres_robot_m": {
+  "left_rear_wheel": [
+   -0.221,
+   0.2852,
+   -0.6365
+  ],
+  "left_middle_wheel": [
+   0.1798,
+   0.2852,
+   -0.5945
+  ],
+  "left_front_wheel": [
+   0.9311,
+   0.2852,
+   -0.5154
+  ],
+  "right_rear_wheel": [
+   -0.221,
+   -0.2848,
+   -0.6365
+  ],
+  "right_middle_wheel": [
+   0.1799,
+   -0.2848,
+   -0.5946
+  ],
+  "right_front_wheel": [
+   0.9312,
+   -0.2848,
+   -0.5158
+  ]
+ }
+}

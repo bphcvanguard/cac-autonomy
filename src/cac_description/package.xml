@@ -2,12 +2,19 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>cac_description</name>
-  <version>0.0.1</version>
-  <description>Rover URDF and sensor extrinsics</description>
+  <version>0.1.0</version>
+  <description>URDF of the old Vanguard rover (rocker-bogie, 6 wheels, skid-steer), generated from its CAD</description>
   <maintainer email="cac-autonomy@bphcvanguard.example">CAC Autonomy</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joint_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-numpy</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
