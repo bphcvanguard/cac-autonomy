@@ -217,26 +217,25 @@ on a box and 1 on the mesh. `<max_contacts>` is not honoured by either engine.
 
 ### The real rover on sand
 
-Measured with the `cac_description` rover (6 wheels r 0.11 m, wheelbase 1.16 m, track 0.57 m,
-27.9 kg ASSUMED) in `generate_arena --layout empty`, shipped sand (`tiles`, mu 0.5). The drive is a
-**test-only** gz `DiffDrive` (3 left + 3 right wheel joints, `wheel_separation` 0.57,
-`wheel_radius` 0.11, 20 N m per wheel); odometry is the plugin's, truth is the model pose. Not
-committed: the robot plugins belong to the Platform pod.
+Measured with the `cac_description` rover (new CAD: 1.11 x 0.75 x 0.68 m standing, 6 wheels r 0.11 m,
+wheelbase 0.89 m, track 0.65 m) in the arena, shipped sand (`tiles`, mu 0.5). The drive is a
+**test-only** gz `DiffDrive` (3 left + 3 right wheel joints, `wheel_separation` 0.647,
+`wheel_radius` 0.11); odometry is the plugin's, truth is the model pose. Not committed: the robot
+plugins belong to the Platform pod.
 
-**DART, `rover_sim.urdf`** (rockers and diff bar fixed, bogies free; wheels mu1 0.2 lateral / mu2
-1.0 rolling, `fdir1` along the axle):
+**DART, `rover_sim.urdf`** (rockers and diff bar fixed, bogies free; isotropic wheels with no
+friction tags, so DART's min(wheel, sand) lets the sand's 0.5 set the grip):
 
 | Run | Result |
 |---|---|
-| 360 deg in place | **360.4 deg** (odometry exact at track 0.570 m) |
-| Arc at 1 m / 0.5 m / 2 m commanded radius | R 1.036 / 0.543 / 2.033 m |
-| Straight 4 m | exact |
-| 11 cm deep, 50 cm crater under the left wheels | crosses 6/6, roll 1.9 deg, pitch 2.0 deg |
-| Off-centre boulder | climbs, roll 6.2 deg, pitch 9.9 deg |
-| Steep 14 cm boulder, head-on | stalls 8/8, on any friction setting |
-| Full `rover.urdf` (mimics ignored) | tips over, pitch -34 deg |
+| 360 deg in place | **360.3 / 360.5 / 360.4 deg** with wheel friction untagged / iso 0.5 / iso 1.0; odometry matches (track 0.647 m); no sliding |
+| Arc, 180 deg commanded | 180.6 deg |
+| Straight 4 m | 4.0014 m, 0.0 deg heading change |
+| 11 cm deep, 50 cm crater under the left wheel line | crosses; max roll 2.4 deg, pitch 2.6 deg, heading deflected 4.8 deg |
+| 15 cm steep boulder, head-on (right wheel line) | stalls after ~2.65 m, on either friction (avoid rocks anyway: touching one is a penalty) |
+| Full `rover.urdf` (mimics ignored) | tips over (old CAD: pitch -34 deg) |
 
-**bullet-featherstone, full `rover.urdf`** (mimic differential enforced; held to 0.06 deg in every run):
+**bullet-featherstone, full `rover.urdf`** (old CAD; mimic differential enforced; held to 0.06 deg in every run):
 
 | Run | Result |
 |---|---|
@@ -251,9 +250,10 @@ Bullet-featherstone fixes the friction directions to world x / y instead of the 
 default torsional, spinning friction (a lever arm in metres) also resists every yaw twist.
 
 **Starting point for the Platform pod** (measured facts, not tuned values):
-- Drive `rover_sim.urdf` on DART with `wheel_separation` 0.57; odometry then matches truth.
-- Isotropic wheel friction cannot skid-steer this rover on either engine (lateral above ~0.3 gives
-  0 deg). The wheels need anisotropic friction: `mu2` 1.0 rolling, `mu1` 0.2 lateral, `fdir1` on the axle.
+- Drive `rover_sim.urdf` on DART with `wheel_separation` 0.647; odometry then matches truth.
+- The new, shorter and wider geometry skid-steers on plain isotropic wheels; no friction tags needed.
+  The OLD long-narrow geometry (wheelbase 1.16 m, track 0.57 m) needed anisotropic wheels (`mu1` 0.2
+  lateral, `mu2` 1.0 rolling, `fdir1` on the axle). Remember this for future designs.
 - Straight-line odometry is exact here. That says nothing about real sand.
 - DART cannot do a closed-loop linkage, so the differential stays locked there.
 
