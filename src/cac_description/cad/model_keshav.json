@@ -1,0 +1,8 @@
+{
+  "_note": "NEW JOINTS KESHAV ASSEMBLY.step after prep_keshav.py (rotated to the 01Design_25 convention, mm). Pivots taken from the UPDATED side (internal 'left' = CAD +y = robot right with front -x); the other side is rebuilt by --mirror-from left.",
+  "rocker_pivot": {"left": [264.0, 341.0, 609.0], "right": [264.0, -346.4, 609.0]},
+  "bogie_pivot": {"left": [-86.0, 341.0, 487.0], "right": [-86.0, -346.4, 487.0]},
+  "diff_pivot": [358.0, -3.0, 709.0],
+  "diff_link_on_rocker": [332.0, 303.0, 735.0],
+  "diff_bar_end": [353.0, 303.0, 766.0]
+}

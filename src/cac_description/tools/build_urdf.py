@@ -113,7 +113,8 @@ def solve_bogie_stance(wheel_c, side):
     """Bogie rotation (rad, about its pin) puts its two wheel centres on the front wheel line."""
     from scipy.optimize import brentq
     ws = sorted([w for w in wheel_c
-                 if (w[1] > ROCKER_PIVOT['right'][1] + 0.28) == (side == 'left')],
+                 if (w[1] > (ROCKER_PIVOT['left'][1] + ROCKER_PIVOT['right'][1]) / 2)
+                 == (side == 'left')],
                 key=lambda w: -w[0])
     F, M, R = ws
     J = BOGIE_PIVOT[side]
@@ -124,6 +125,33 @@ def solve_bogie_stance(wheel_c, side):
     return brentq(cross, -0.6, 0.6)
 
 
+# Effective densities (kg/m^3 of CAD solid volume) per material tag (prep_*.py). ASSUMED unless
+# a model file overrides them.
+MATERIAL_DENSITY = {
+    'pla': 0.6 * 1240.0,           # printed parts: walls + infill ~60 % of solid PLA
+    'cf_tube': 0.36 * 1550.0,      # CAD rods are solid 20 mm bars; a 20 x 16 mm tube is 36 %
+    'steel': 7850.0,
+    'motor': 1450.0,               # ~0.6 kg drive motor in a 415 cm^3 CAD block
+    'wheel': 450.0,
+    'body': 700.0,
+}
+
+
+def load_model(path):
+    """Override pivots (mm) and material densities from a model JSON."""
+    m = json.load(open(path))
+    for name, table in (('rocker_pivot', ROCKER_PIVOT), ('bogie_pivot', BOGIE_PIVOT)):
+        for side in ('left', 'right'):
+            if side in m.get(name, {}):
+                table[side] = np.array(m[name][side], float) * MM
+    g = globals()
+    for key, var in (('diff_pivot', 'DIFF_PIVOT'), ('diff_link_on_rocker', 'DIFF_LINK_ON_ROCKER'),
+                     ('diff_bar_end', 'DIFF_BAR_END')):
+        if key in m:
+            g[var] = np.array(m[key], float) * MM
+    MATERIAL_DENSITY.update(m.get('density', {}))
+
+
 def mirror_side(parts, source):
     """Replace every rocker/bogie/wheel part of the other side by a mirror image of `source`'s.
 
@@ -132,7 +160,8 @@ def mirror_side(parts, source):
     pointing outwards (mass_props needs a positive volume). The body and the diff bar are kept.
     """
     other = 'right' if source == 'left' else 'left'
-    body = [r for lk, _, r in parts if lk == 'base_link' and r['name'].strip() == 'base_link']
+    body = [r for lk, _, r in parts
+            if lk == 'base_link' and r['name'].strip().split(' #')[0] == 'base_link']
     y0 = centre(body[0])[1] * MM
     for piv in (ROCKER_PIVOT, BOGIE_PIVOT):      # the pivots move with the mirrored side
         piv[other] = piv[source] * np.array([1.0, -1.0, 1.0]) + np.array([0.0, 2 * y0, 0.0])
@@ -168,7 +197,8 @@ def sim_variant(urdf_text, lock):
     import re
     out = urdf_text
     for name in lock:
-        pat = re.compile(r'(<joint name="%s" type=")revolute(">.*?</joint>)' % re.escape(name), re.S)
+        pat = re.compile(r'(<joint name="%s" type=")revolute(">.*?</joint>)' % re.escape(name),
+                         re.S)
         m = pat.search(out)
         assert m, name
         body = re.sub(r'<axis[^>]*/>|<limit[^>]*/>|<dynamics[^>]*/>|<mimic[^>]*/>', '', m.group(2))
@@ -179,10 +209,11 @@ def sim_variant(urdf_text, lock):
         gz.append(f'  <gazebo reference="{wheel}"><mu1>{f["mu1"]}</mu1><mu2>{f["mu2"]}</mu2>'
                   f'<fdir1>{f["fdir1"]}</fdir1></gazebo>')
     out = out.replace('</robot>', '\n'.join(gz) + '\n</robot>')
-    note = ('<!-- rover_sim.urdf: DRIVING variant for gz-sim 8 DART. Rockers and diff bar are FIXED\n'
-            '     (DART ignores mimic joints; a free differential tips the body over); bogies still\n'
-            '     articulate; wheels carry anisotropic friction (lateral 0.2 / rolling 1.0, fdir1 =\n'
-            '     axle) so the skid-steer can turn. Use rover.urdf for RViz and suspension work. -->\n')
+    note = ('<!-- rover_sim.urdf: DRIVING variant for gz-sim 8 DART. Rockers and diff bar are'
+            ' FIXED\n     (DART ignores mimic joints; a free differential tips the body over);'
+            ' bogies still\n     articulate; wheels carry anisotropic friction (lateral 0.2 /'
+            ' rolling 1.0, fdir1 =\n     axle) so the skid-steer can turn. Use rover.urdf for RViz'
+            ' and suspension work. -->\n')
     return out.replace('<robot ', note + '<robot ', 1)
 
 
@@ -217,11 +248,16 @@ def main():
     ap.add_argument('--front', choices=('-x', '+x'), default='-x',
                     help='which CAD end is the front (default -x: wheel/rod 1 end)')
     ap.add_argument('--total-mass', type=float, default=None, help='scale all masses to this (kg)')
+    ap.add_argument('--model', default=None,
+                    help="JSON with pivots (mm, this tool's CAD convention) and material "
+                         'densities for a CAD file other than 01Design_25')
     ap.add_argument('--mirror-from', choices=('left', 'right'), default=None,
                     help='rebuild the other side as a mirror image of this CAD side '
                          '(internal CAD sense: left = CAD +y). Use when one side has newer joints')
     a = ap.parse_args()
 
+    if a.model:
+        load_model(a.model)
     rows = json.load(open(a.parts_json))
     index = json.load(open(os.path.join(a.parts_dir, 'index.json')))
     files = {}
@@ -235,7 +271,7 @@ def main():
         k = used.get(lbl, 0)
         used[lbl] = k + 1
         tris = read_stl(os.path.join(a.parts_dir, files[lbl][k]))
-        parts.append((link_of(r), tris, r))
+        parts.append((r['link'] if 'link' in r else link_of(r), tris, r))
     if a.mirror_from:
         parts = mirror_side(parts, a.mirror_from)
 
@@ -248,12 +284,13 @@ def main():
     for s in ('left', 'right'):
         frames[f'{s}_rocker'] = ROCKER_PIVOT[s]
         frames[f'{s}_bogie'] = BOGIE_PIVOT[s]
-    link_tris = {}
+    link_tris, link_mats = {}, {}
     for lk, tris, r in parts:
         side = lk.split('_')[0]
         if lk.endswith('bogie') or lk in (f'{side}_middle_wheel', f'{side}_rear_wheel'):
             tris = roty(tris.reshape(-1, 3), BOGIE_PIVOT[side], beta[side]).reshape(-1, 3, 3)
         link_tris.setdefault(lk, []).append(tris)
+        link_mats.setdefault(lk, []).append(r.get('material'))
         if lk.endswith('wheel'):
             frames[lk] = tris.reshape(-1, 3).min(0) / 2 + tris.reshape(-1, 3).max(0) / 2
     # Base-frame orientation: front=-x means the robot's +x is CAD -x and +y is CAD -y.
@@ -269,7 +306,8 @@ def main():
         items = []
         for t in tl:
             vol, com, I_unit = mass_props(t)
-            m = vol * DENSITY[kind(lk)]
+            mat = link_mats[lk][len(items)]
+            m = vol * (MATERIAL_DENSITY[mat] if mat else DENSITY[kind(lk)])
             items.append((m, com, I_unit))
             m_tot += m
             mom += m * com
@@ -413,8 +451,8 @@ def main():
     with open(os.path.join(a.out_pkg, 'urdf', 'rover.urdf'), 'w') as f:
         f.write('\n'.join(L) + '\n')
     with open(os.path.join(a.out_pkg, 'urdf', 'rover_sim.urdf'), 'w') as f:
-        f.write(sim_variant('\n'.join(L) + '\n', [pub('left_rocker_joint'),
-                                                     pub('right_rocker_joint'), 'diff_bar_joint']))
+        locked = [pub('left_rocker_joint'), pub('right_rocker_joint'), 'diff_bar_joint']
+        f.write(sim_variant('\n'.join(L) + '\n', locked))
 
     for lk in link_tris:
         os.replace(os.path.join(mesh_dir, f'{lk}.stl.tmp'),

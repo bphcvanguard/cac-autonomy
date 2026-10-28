@@ -2,7 +2,8 @@
 **Owners:** Platform (body, wheels) · Perception (sensor mounting)
 
 URDF of the **old Vanguard rover**: a six-wheel rocker-bogie with skid-steer and no steering joints.
-It is generated from the team's CAD (`01Design_25.step`, a Fusion 360 export) by `tools/build_urdf.py`.
+It is generated from the team's CAD (`NEW JOINTS KESHAV ASSEMBLY.step`, 28 Oct 2026) by `tools/prep_keshav.py` and `tools/build_urdf.py`.
+In that file **only the robot's right side has the new joints**, so the left side is rebuilt as an exact mirror of the right (`--mirror-from`). The rods, joints, wheels and pivots are mirrored; the body and the diff bar are untouched.
 Frames follow REP-103/105: `base_footprint → base_link → …`, with x forward, y left, z up. Units are metres and kg.
 
 ```bash
@@ -22,23 +23,26 @@ ros2 launch cac_description display.launch.py      # RViz: robot model + TF (nee
 - **Differential:** `left_rocker_joint` mimics `right_rocker_joint` × −1. Relative to the body, the rockers always turn by equal and opposite amounts, as the real differential bar forces them to. The bar's ratio, 0.412, comes from the linkage geometry: the ball-joint height above the rocker pivot (126 mm) divided by the bar's half-length (305.5 mm).
 - **Zero pose = standing on flat ground:**
   - The rockers sit at their CAD angle, where the differential is neutral.
-  - Each bogie is rotated until its wheels line up: +2.36° left and +2.38° right from the CAD.
+  - Each bogie is rotated -0.75° from the CAD until its wheels line up.
   - All six wheels then touch the ground (`test_urdf.py` checks this to within 2 mm).
-  - **The body sits pitched 6.0° nose-down** on flat ground (`base_footprint → base_link`). That is what the CAD geometry gives. Check it against the real rover; if the real body is level, the CAD's rocker or bogie angles are off.
-- **Size standing:** 1.38 m long × 0.67 m wide × 0.92 m tall. The rocker pivots are 0.72 m above the ground.
+  - The body sits 0.5° from level on flat ground: essentially level. The old CAD gave 6°; the new joints fixed it.
+- **Size standing:** 1.11 m long × 0.7505 m wide × 0.68 m tall. The rocker pivots are 0.49 m above the ground. The wheelbase is 0.89 m and the track 0.65 m.
+  - **The width is 0.5 mm over the rules' 0.75 m.** This comes from the mirrored left side, so measure the real rover once both sides have the new joints.
 - **Front:** the CAD's −x end (rod/wheel "1" end, the bogies lead). Rebuild with `--front=+x` to flip it.
 
-## Masses: ASSUMED until measured
+## Masses: from the materials, until the rover is weighed
 
-The STEP has no materials, so the 27.9 kg total comes from assumed densities (`DENSITY` in `tools/build_urdf.py`).
+| Material | Parts | Density used (per CAD volume) |
+|---|---|---|
+| PLA (team) | joints, brackets, plates, motor caps, diff bar | 744 kg/m³ = 60 % of solid PLA (walls + infill, ASSUMED) |
+| Carbon fibre (team) | rods | 558 kg/m³: the CAD draws solid 20 mm bars, so this assumes a 20 × 16 mm tube |
+| Steel | pivot screws and pins | 7850 kg/m³ |
+| ASSUMED | drive motors (about 0.6 kg each), wheels (1.0 kg each), body (4.6 kg) | see `MATERIAL_DENSITY` in `tools/build_urdf.py` |
 
-When the rover has been weighed, regenerate with the measured total:
+The total comes out at **21.0 kg**.
 
-```bash
-python3 tools/build_urdf.py cad/parts.json <parts_m dir> . --front=-x --total-mass <KG>
-```
-
-That keeps each part's share of the mass and scales every inertia to match.
+Once the rover has been weighed, rebuild with `--total-mass <KG>`. That keeps each part's share of the mass and scales every inertia to match.
+Update `MATERIAL_DENSITY` when the real tube size, PLA infill, wheel material and motor weights are known.
 
 ## Two URDFs: which one to use
 
@@ -81,17 +85,17 @@ To run the full model on Bullet, start Gazebo with `--physics-engine gz-physics-
 
 The pipeline needs FreeCAD (flatpak `org.freecad.FreeCAD`) for the first two steps only:
 
-1. `tools/inspect_step.py`: run in FreeCADCmd. Lists every solid part with its placement, size and volume (`cad/parts.json`).
-2. `tools/export_parts.py`: run in FreeCADCmd. Writes one STL per part, in metres, in CAD coordinates.
-3. `tools/classify.py`: assigns each part to a link **by position**. The CAD's left/right names are not consistent (for example `Rod 1L` and `Plate 2L` are on opposite sides).
-4. `tools/build_urdf.py`: rotates the bogies into stance, builds each link's mesh, mass, centre of mass and inertia (exact from the mesh volumes), and writes the oriented-box collisions, the joints and `urdf/build_summary.json`.
+1. `tools/inspect_step.py`: run in FreeCADCmd. Lists every solid part with its placement, size and volume.
+2. `tools/export_parts.py`: run in FreeCADCmd. Writes one STL per part, in metres.
+3. `tools/prep_keshav.py`: rotates this file's frame into the generator's convention and drops duplicates and hardware under 1 cm³. It also assigns each part a link (from a name table, with the side taken from position) and a material.
+4. `tools/build_urdf.py --model cad/model_keshav.json --mirror-from left --front=-x`: mirrors the updated side and rotates the bogies into stance. It then builds each link's mesh, mass, centre of mass and inertia, and writes the oriented-box collisions, the joints, `rover.urdf`, `rover_sim.urdf` and `urdf/build_summary.json`.
 5. `tools/fk_check.py`: renders the zero pose and prints how far each wheel's bottom is from the ground.
 
 Example run for step 1:
 
 ```bash
 flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD tools/inspect_step.py \
-  01Design_25.step cad/parts.json
+  "NEW JOINTS KESHAV ASSEMBLY.step" cad/parts_keshav_raw.json
 ```
 
 ## Open items
@@ -99,4 +103,5 @@ flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD tools/ins
 - **Total mass:** to be measured. Rebuild with `--total-mass`.
 - **Real stance pitch:** does the real body sit nose-down 6° on flat ground?
 - **Sensors:** none are mounted yet. Perception adds the camera/LiDAR links and their extrinsics here.
-- **Height:** 0.92 m tall standing. That breaks the 0.75 m stowed height on Unstop and the schematic, but is within the rulebook's 1.0 m. Organiser question RULES.md §8 Q5.
+- **Envelope:** 0.68 m tall standing, so it is under the 0.75 m stowed height. It is 0.7505 m wide with the mirrored side, which is 0.5 mm over 0.75 m. Measure the real rover.
+- **Left side:** it is a mirror of the right until the CAD's left side has the new joints too. Once it has, rebuild without `--mirror-from`.

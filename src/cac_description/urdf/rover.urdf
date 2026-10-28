@@ -3,8 +3,8 @@
      by hand: change the generator and re-run. Units: metres, kg. REP-103: x forward, y left, z up.
      Front = CAD -x. Masses: ASSUMED densities (see generator); rescale with the total-mass option.
      Zero pose = standing on flat ground: rockers at the CAD angle (differential neutral), bogies
-     rotated +2.35 / +2.38 deg (left/right) from the CAD. On flat ground the body
-     pitches +5.99 deg about y (base_footprint -> base_link). -->
+     rotated -0.75 / -0.75 deg (left/right) from the CAD. On flat ground the body
+     pitches -0.51 deg about y (base_footprint -> base_link). -->
 <robot name="vanguard_rover">
   <material name="base_link"><color rgba="0.55 0.57 0.6 1"/></material>
   <material name="rocker"><color rgba="0.85 0.45 0.1 1"/></material>
@@ -14,155 +14,171 @@
   <link name="base_footprint"/>
   <joint name="base_footprint_joint" type="fixed">
     <parent link="base_footprint"/><child link="base_link"/>
-    <origin xyz="0 0 0.719964" rpy="0 0.104545 0"/>
+    <origin xyz="0 0 0.486533" rpy="0 -0.0088856 0"/>
   </joint>
   <link name="base_link">
-    <inertial><origin xyz="0.000351226 0.00396154 0.0149954" rpy="0 0 0"/><mass value="4.45526"/>
-      <inertia ixx="0.231861" ixy="0.00257964" ixz="0.00673923" iyy="0.150686" iyz="-0.00110896" izz="0.332267"/></inertial>
+    <inertial><origin xyz="0.000545624 -0.000381048 0.0154799" rpy="0 0 0"/><mass value="4.62879"/>
+      <inertia ixx="0.246748" ixy="0.00257274" ixz="0.00679308" iyy="0.151042" iyz="-0.00264622" izz="0.346917"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/base_link.stl"/></geometry><material name="base_link"/></visual>
-    <collision><origin xyz="0.0258522 1.45584e-08 -4.70916e-05" rpy="-1.57599 -1.37743 0.00414241"/><geometry><box size="0.29279 0.529734 0.550677"/></geometry></collision>
-    <collision><origin xyz="-0.0942974 -0.000173668 0.0999705" rpy="-0.0766524 -0.00281283 -0.747672"/><geometry><box size="0.0599374 0.0600561 0.0713266"/></geometry></collision>
-    <collision><origin xyz="-0.0942905 0.00173891 0.0798057" rpy="-0.673006 -0.136082 -0.802077"/><geometry><box size="0.0606539 0.0640015 0.062538"/></geometry></collision>
-    <collision><origin xyz="-0.0942904 0.00173893 0.1301" rpy="0.673001 0.13608 -0.802076"/><geometry><box size="0.0606539 0.0640015 0.0625379"/></geometry></collision>
+    <collision><origin xyz="0.0261897 -3.25261e-17 -0.000120851" rpy="-1.57692 -1.37734 0.00468807"/><geometry><box size="0.292891 0.529959 0.550894"/></geometry></collision>
+    <collision><origin xyz="-0.0939587 -0.000171505 0.0998964" rpy="-0.0758394 -0.00258901 -0.747225"/><geometry><box size="0.0599379 0.060058 0.0713146"/></geometry></collision>
+    <collision><origin xyz="-0.093942 0.00172193 0.0797402" rpy="-0.673232 -0.133802 -0.800381"/><geometry><box size="0.0606425 0.0640065 0.0625382"/></geometry></collision>
+    <collision><origin xyz="-0.0939639 0.00175595 0.130035" rpy="0.672769 0.138358 -0.80377"/><geometry><box size="0.0606648 0.0639959 0.0625377"/></geometry></collision>
   </link>
   <link name="diff_bar">
-    <inertial><origin xyz="4.96543e-05 2.36234e-08 -0.00998803" rpy="0 0 0"/><mass value="1.17923"/>
-      <inertia ixx="0.0431585" ixy="6.80155e-11" ixz="-1.21155e-06" iyy="0.000772959" iyz="-7.47652e-10" izz="0.0428789"/></inertial>
+    <inertial><origin xyz="0.000232436 -0.00377119 0.0327798" rpy="0 0 0"/><mass value="0.722942"/>
+      <inertia ixx="0.0259787" ixy="1.22252e-05" ixz="-1.91767e-07" iyy="0.000473464" iyz="3.54208e-05" izz="0.0258104"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/diff_bar.stl"/></geometry><material name="diff_bar"/></visual>
-    <collision><origin xyz="-4.87438e-05 3.42534e-08 2.08779e-05" rpy="1.5708 0.0919713 -1.81249e-05"/><geometry><box size="0.0567908 0.0804071 0.644068"/></geometry></collision>
+    <collision><origin xyz="0.000188208 -0.000309492 0.0429471" rpy="1.57079 0.0893071 -2.75767e-05"/><geometry><box size="0.0566059 0.0802922 0.644069"/></geometry></collision>
   </link>
   <link name="right_rocker">
-    <inertial><origin xyz="-0.106256 0.0661011 -0.389756" rpy="0 0 0"/><mass value="3.01782"/>
-      <inertia ixx="0.202517" ixy="0.0214301" ixz="-0.0769466" iyy="0.240337" iyz="0.0457753" izz="0.0821226"/></inertial>
+    <inertial><origin xyz="-0.252848 0.102651 -0.207005" rpy="0 0 0"/><mass value="1.85956"/>
+      <inertia ixx="0.0548015" ixy="0.0137573" ixz="-0.0373794" iyy="0.0921313" iyz="0.0147275" izz="0.0610579"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/right_rocker.stl"/></geometry><material name="rocker"/></visual>
-    <collision><origin xyz="-0.0862834 -0.025 -0.260534" rpy="3.08214 -0.314448 -2.95165"/><geometry><box size="0.0200098 0.020028 0.438801"/></geometry></collision>
-    <collision><origin xyz="0.262449 -0.025 -0.0869679" rpy="-1.16261 0.656281 1.82887"/><geometry><box size="0.0200541 0.0200219 0.442973"/></geometry></collision>
-    <collision><origin xyz="0.0126757 -0.0276421 0.038877" rpy="0.0282311 0.0403075 -1.60178"/><geometry><box size="0.0425028 0.105815 0.209677"/></geometry></collision>
-    <collision><origin xyz="-0.211998 0.236427 -0.639741" rpy="1.93836 0.0147956 1.57436"/><geometry><box size="0.0497669 0.0913457 0.0970096"/></geometry></collision>
-    <collision><origin xyz="-0.16924 0.0765033 -0.5112" rpy="-2.14324 0.323614 0.0002542"/><geometry><box size="0.041661 0.203363 0.31151"/></geometry></collision>
-    <collision><origin xyz="-0.20565 0.11745 -0.62097" rpy="1.62405 0.319864 -7.71134e-05"/><geometry><box size="0.075009 0.124301 0.191228"/></geometry></collision>
-    <collision><origin xyz="-1.66068e-05 -0.00999202 -4.28966e-05" rpy="-0.81086 0.000419465 1.57094"/><geometry><box size="0.0300284 0.0998131 0.0998109"/></geometry></collision>
+    <collision><origin xyz="-0.0121918 0.0374114 0.126778" rpy="0.819018 -1.56893 -0.648407"/><geometry><box size="0.0301074 0.0513158 0.0614492"/></geometry></collision>
+    <collision><origin xyz="-0.197221 0.000440626 -0.0643056" rpy="1.89467 -0.239828 -1.65028"/><geometry><box size="0.0199525 0.019978 0.284203"/></geometry></collision>
+    <collision><origin xyz="0.180156 0.000440622 -0.0585533" rpy="-0.0999231 1.25507 3.03383"/><geometry><box size="0.0200247 0.0206169 0.24702"/></geometry></collision>
+    <collision><origin xyz="-0.348414 0.261851 -0.372977" rpy="1.31731 0.0186619 -1.57906"/><geometry><box size="0.0501812 0.0938574 0.0970161"/></geometry></collision>
+    <collision><origin xyz="-0.350636 0.101944 -0.238062" rpy="-2.1433 -0.0184585 -0.000349172"/><geometry><box size="0.0416784 0.203359 0.311512"/></geometry></collision>
+    <collision><origin xyz="-0.348862 0.142892 -0.353696" rpy="1.62402 -0.01406 0.000247165"/><geometry><box size="0.0750296 0.124299 0.191224"/></geometry></collision>
+    <collision><origin xyz="-0.343397 0.000709354 -0.119602" rpy="-2.41721 0.0109324 1.53411"/><geometry><box size="0.0267648 0.0509344 0.0790772"/></geometry></collision>
+    <collision><origin xyz="0.000410896 0.0307752 0.0464572" rpy="0.000892952 0.251793 1.56966"/><geometry><box size="0.0915659 0.183159 0.193098"/></geometry></collision>
+    <collision><origin xyz="0.0015465 0.0442642 0.000651472" rpy="1.56903 0.00596557 -0.00936337"/><geometry><box size="0.0806987 0.105491 0.125029"/></geometry></collision>
   </link>
   <link name="left_rocker">
-    <inertial><origin xyz="-0.111212 -0.0655508 -0.385475" rpy="0 0 0"/><mass value="3.03678"/>
-      <inertia ixx="0.202336" ixy="-0.0221916" ixz="-0.0791492" iyy="0.242315" iyz="-0.045864" izz="0.0845797"/></inertial>
+    <inertial><origin xyz="-0.252848 -0.102651 -0.207005" rpy="0 0 0"/><mass value="1.85956"/>
+      <inertia ixx="0.0548015" ixy="-0.0137573" ixz="-0.0373794" iyy="0.0921313" iyz="-0.0147275" izz="0.0610579"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/left_rocker.stl"/></geometry><material name="rocker"/></visual>
-    <collision><origin xyz="-0.0900689 0.025 -0.25925" rpy="2.85185 -0.16697 -2.07366"/><geometry><box size="0.0204523 0.0208438 0.438843"/></geometry></collision>
-    <collision><origin xyz="0.261154 0.025 -0.0907822" rpy="1.0751 -0.80902 -1.19786"/><geometry><box size="0.0200359 0.0200431 0.442973"/></geometry></collision>
-    <collision><origin xyz="0.0114496 0.0251797 0.0386801" rpy="0.0480129 -0.00121102 -1.58102"/><geometry><box size="0.0402891 0.106669 0.209563"/></geometry></collision>
-    <collision><origin xyz="-0.176769 -0.0765034 -0.508645" rpy="2.14343 0.330652 0.000343713"/><geometry><box size="0.0416641 0.203358 0.311511"/></geometry></collision>
-    <collision><origin xyz="-0.214669 -0.117449 -0.617911" rpy="-1.62418 0.334422 -9.85348e-05"/><geometry><box size="0.0750114 0.124314 0.191233"/></geometry></collision>
-    <collision><origin xyz="-0.220628 -0.23628 -0.635813" rpy="1.34745 0.0272402 1.5931"/><geometry><box size="0.0514965 0.0970529 0.0904182"/></geometry></collision>
-    <collision><origin xyz="-1.98276e-05 0.00999472 -4.47893e-05" rpy="-0.788557 -0.000229983 1.57097"/><geometry><box size="0.0300184 0.0996469 0.0996494"/></geometry></collision>
+    <collision><origin xyz="-0.0121918 -0.0374114 0.126778" rpy="-0.819018 -1.56893 0.648407"/><geometry><box size="0.0301074 0.0513158 0.0614492"/></geometry></collision>
+    <collision><origin xyz="-0.197221 -0.000440626 -0.0643056" rpy="-1.89467 -0.239828 1.65028"/><geometry><box size="0.0199525 0.019978 0.284203"/></geometry></collision>
+    <collision><origin xyz="0.180156 -0.000440622 -0.0585533" rpy="-0.0999231 -1.25507 0.10776"/><geometry><box size="0.0200247 0.0206169 0.24702"/></geometry></collision>
+    <collision><origin xyz="-0.348414 -0.261851 -0.372977" rpy="1.82428 0.0186619 1.57906"/><geometry><box size="0.0501812 0.0938574 0.0970161"/></geometry></collision>
+    <collision><origin xyz="-0.350636 -0.101944 -0.238062" rpy="2.1433 -0.0184585 0.000349172"/><geometry><box size="0.0416784 0.203359 0.311512"/></geometry></collision>
+    <collision><origin xyz="-0.348862 -0.142892 -0.353696" rpy="-1.62402 -0.01406 -0.000247165"/><geometry><box size="0.0750296 0.124299 0.191224"/></geometry></collision>
+    <collision><origin xyz="-0.343397 -0.000709354 -0.119602" rpy="2.41721 0.0109324 -1.53411"/><geometry><box size="0.0267648 0.0509344 0.0790772"/></geometry></collision>
+    <collision><origin xyz="0.000410896 -0.0307752 0.0464572" rpy="3.1407 0.251793 -1.56966"/><geometry><box size="0.0915659 0.183159 0.193098"/></geometry></collision>
+    <collision><origin xyz="0.0015465 -0.0442642 0.000651472" rpy="-1.56903 0.00596557 0.00936337"/><geometry><box size="0.0806987 0.105491 0.125029"/></geometry></collision>
   </link>
   <link name="right_bogie">
-    <inertial><origin xyz="0.0138964 0.105022 -0.255157" rpy="0 0 0"/><mass value="5.07026"/>
-      <inertia ixx="0.111754" ixy="-0.00247546" ixz="-0.0169036" iyy="0.480272" iyz="0.0348276" izz="0.439802"/></inertial>
+    <inertial><origin xyz="-0.030303 0.128111 -0.178154" rpy="0 0 0"/><mass value="2.93299"/>
+      <inertia ixx="0.040874" ixy="0.00108766" ixz="-0.0139675" iyy="0.171891" iyz="0.0107025" izz="0.169485"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/right_bogie.stl"/></geometry><material name="bogie"/></visual>
-    <collision><origin xyz="0.0014027 -0.00249313 -0.0115604" rpy="-1.62745 -0.000652846 1.56991"/><geometry><box size="0.0301098 0.122347 0.144957"/></geometry></collision>
-    <collision><origin xyz="-0.0194332 -0.00250512 0.00540977" rpy="1.29691 0.000555357 -1.57747"/><geometry><box size="0.0509317 0.0999986 0.140204"/></geometry></collision>
-    <collision><origin xyz="-0.135563 -0.0025 -0.152732" rpy="2.43403 -0.195496 -1.7939"/><geometry><box size="0.0200106 0.0199962 0.299173"/></geometry></collision>
-    <collision><origin xyz="0.153313 -0.0025 -0.136594" rpy="-0.825081 0.187218 1.74118"/><geometry><box size="0.019976 0.0199607 0.299173"/></geometry></collision>
-    <collision><origin xyz="-0.264985 0.099003 -0.297549" rpy="2.14307 -0.73341 -3.14127"/><geometry><box size="0.0416607 0.203363 0.311509"/></geometry></collision>
-    <collision><origin xyz="-0.342117 0.139952 -0.383719" rpy="1.62399 0.729314 -3.89271e-05"/><geometry><box size="0.0750039 0.124293 0.191224"/></geometry></collision>
-    <collision><origin xyz="0.29813 0.0990034 -0.266015" rpy="0.997997 -0.837394 0.000365161"/><geometry><box size="0.0416611 0.203363 0.31151"/></geometry></collision>
-    <collision><origin xyz="0.384305 0.13995 -0.343147" rpy="1.62417 -0.841217 -0.000114042"/><geometry><box size="0.0750094 0.124303 0.191228"/></geometry></collision>
-    <collision><origin xyz="-0.355141 0.258862 -0.398887" rpy="1.13716 -0.0231016 -1.57218"/><geometry><box size="0.0504756 0.0943525 0.0970284"/></geometry></collision>
-    <collision><origin xyz="0.3987 0.258906 -0.356852" rpy="1.9613 0.0190788 1.5775"/><geometry><box size="0.0501737 0.0932744 0.0969807"/></geometry></collision>
+    <collision><origin xyz="-0.114725 0.000440622 -0.0873043" rpy="3.12362 -0.920701 -3.11996"/><geometry><box size="0.0200138 0.0201369 0.183185"/></geometry></collision>
+    <collision><origin xyz="0.111217 0.000703284 -0.0026838" rpy="1.28268 -1.46147 -1.27875"/><geometry><box size="0.020871 0.0200713 0.117692"/></geometry></collision>
+    <collision><origin xyz="-0.333641 0.26182 -0.254436" rpy="2.26311 -0.00733376 1.54523"/><geometry><box size="0.0506866 0.0970517 0.0931315"/></geometry></collision>
+    <collision><origin xyz="-0.226494 0.101944 -0.172642" rpy="-2.1438 0.916992 -0.000619621"/><geometry><box size="0.0416806 0.203357 0.311513"/></geometry></collision>
+    <collision><origin xyz="-0.318509 0.142892 -0.242697" rpy="1.62441 0.921333 0.000481157"/><geometry><box size="0.0750347 0.124299 0.191225"/></geometry></collision>
+    <collision><origin xyz="0.187723 0.261855 -0.259211" rpy="1.25784 0.00974197 -1.58173"/><geometry><box size="0.0497523 0.0931812 0.0970039"/></geometry></collision>
+    <collision><origin xyz="0.190106 0.101944 -0.124113" rpy="-2.14332 0.015999 -0.000361219"/><geometry><box size="0.0416795 0.203358 0.311513"/></geometry></collision>
+    <collision><origin xyz="0.187885 0.142892 -0.239743" rpy="1.62401 0.0197908 0.000250365"/><geometry><box size="0.0750299 0.124289 0.191223"/></geometry></collision>
+    <collision><origin xyz="0.187868 0.299817 -0.25919" rpy="1.39185 0.0107452 -1.58842"/><geometry><box size="0.0502614 0.0959779 0.0964906"/></geometry></collision>
+    <collision><origin xyz="0.188021 0.00105363 -0.0212726" rpy="0.513978 -0.0162678 -1.58562"/><geometry><box size="0.0268355 0.0515478 0.0794286"/></geometry></collision>
+    <collision><origin xyz="-0.0418189 0.000440622 -0.0318734" rpy="0.0415884 0.926506 -0.00415207"/><geometry><box size="0.0363203 0.0378577 0.0417791"/></geometry></collision>
+    <collision><origin xyz="0.0525852 0.000440622 -0.000898801" rpy="-0.364673 -1.54066 0.39317"/><geometry><box size="0.0369963 0.0375235 0.0415393"/></geometry></collision>
+    <collision><origin xyz="-0.000166546 0.000440622 -0.000204666" rpy="-1.57045 0.0541243 0.000306577"/><geometry><box size="0.0449733 0.0449742 0.0360204"/></geometry></collision>
+    <collision><origin xyz="0.00120445 0.0209404 -0.0037619" rpy="1.88627 6.35839e-05 -1.57076"/><geometry><box size="0.00500444 0.0574711 0.101621"/></geometry></collision>
+    <collision><origin xyz="0.00120445 -0.0200595 -0.0037619" rpy="1.88627 4.96509e-05 -1.57077"/><geometry><box size="0.00500342 0.0574711 0.101621"/></geometry></collision>
+    <collision><origin xyz="-0.0520657 0.000440622 0.0259751" rpy="3.12769 -1.24832 0.00432307"/><geometry><box size="0.0362427 0.0364382 0.0405254"/></geometry></collision>
   </link>
   <link name="left_bogie">
-    <inertial><origin xyz="0.0257045 -0.105014 -0.253443" rpy="0 0 0"/><mass value="5.07065"/>
-      <inertia ixx="0.113773" ixy="0.00424626" ixz="-0.0327838" iyy="0.479877" iyz="-0.034343" izz="0.437397"/></inertial>
+    <inertial><origin xyz="-0.030303 -0.128111 -0.178154" rpy="0 0 0"/><mass value="2.93299"/>
+      <inertia ixx="0.040874" ixy="-0.00108766" ixz="-0.0139675" iyy="0.171891" iyz="-0.0107025" izz="0.169485"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/left_bogie.stl"/></geometry><material name="bogie"/></visual>
-    <collision><origin xyz="0.00111789 0.00249299 -0.0113073" rpy="1.67727 -0.000835377 -1.5686"/><geometry><box size="0.0302354 0.122402 0.144956"/></geometry></collision>
-    <collision><origin xyz="-0.0192747 0.00250572 0.00576393" rpy="-1.28365 -0.00377878 1.57597"/><geometry><box size="0.0508941 0.0999981 0.140208"/></geometry></collision>
-    <collision><origin xyz="-0.128748 0.0025 -0.158975" rpy="-2.5863 0.416603 0.993047"/><geometry><box size="0.0200467 0.0200014 0.299173"/></geometry></collision>
-    <collision><origin xyz="0.158994 0.0025 -0.128741" rpy="-0.208532 0.872176 2.87192"/><geometry><box size="0.0200462 0.0200038 0.299173"/></geometry></collision>
-    <collision><origin xyz="-0.251022 -0.0990031 -0.309875" rpy="2.14354 0.676974 0.000403149"/><geometry><box size="0.0416648 0.203358 0.31151"/></geometry></collision>
-    <collision><origin xyz="-0.323758 -0.13995 -0.399788" rpy="-1.62409 0.681077 -2.83282e-05"/><geometry><box size="0.075003 0.124304 0.191227"/></geometry></collision>
-    <collision><origin xyz="0.309895 -0.0990034 -0.251015" rpy="0.998666 0.893819 -3.14109"/><geometry><box size="0.0416651 0.203358 0.311511"/></geometry></collision>
-    <collision><origin xyz="0.399806 -0.13995 -0.323757" rpy="1.62406 0.890096 3.14151"/><geometry><box size="0.0750062 0.124308 0.191231"/></geometry></collision>
-    <collision><origin xyz="-0.335814 -0.258933 -0.41508" rpy="1.83192 0.0149702 1.57547"/><geometry><box size="0.0497924 0.0902995 0.096963"/></geometry></collision>
-    <collision><origin xyz="0.415562 -0.258897 -0.336173" rpy="1.62515 0.0216901 1.57574"/><geometry><box size="0.0503385 0.0957059 0.0966288"/></geometry></collision>
+    <collision><origin xyz="-0.114725 -0.000440622 -0.0873043" rpy="3.12362 0.920701 -0.0216336"/><geometry><box size="0.0200138 0.0201369 0.183185"/></geometry></collision>
+    <collision><origin xyz="0.111217 -0.000703284 -0.0026838" rpy="1.28268 1.46147 -1.86285"/><geometry><box size="0.020871 0.0200713 0.117692"/></geometry></collision>
+    <collision><origin xyz="-0.333641 -0.26182 -0.254436" rpy="0.87848 -0.00733376 -1.54523"/><geometry><box size="0.0506866 0.0970517 0.0931315"/></geometry></collision>
+    <collision><origin xyz="-0.226494 -0.101944 -0.172642" rpy="2.1438 0.916992 0.000619621"/><geometry><box size="0.0416806 0.203357 0.311513"/></geometry></collision>
+    <collision><origin xyz="-0.318509 -0.142892 -0.242697" rpy="1.62441 -0.921333 3.14111"/><geometry><box size="0.0750347 0.124299 0.191225"/></geometry></collision>
+    <collision><origin xyz="0.187723 -0.261855 -0.259211" rpy="1.88376 0.00974197 1.58173"/><geometry><box size="0.0497523 0.0931812 0.0970039"/></geometry></collision>
+    <collision><origin xyz="0.190106 -0.101944 -0.124113" rpy="2.14332 0.015999 0.000361219"/><geometry><box size="0.0416795 0.203358 0.311513"/></geometry></collision>
+    <collision><origin xyz="0.187885 -0.142892 -0.239743" rpy="-1.62401 0.0197908 -0.000250365"/><geometry><box size="0.0750299 0.124289 0.191223"/></geometry></collision>
+    <collision><origin xyz="0.187868 -0.299817 -0.25919" rpy="1.74974 0.0107452 1.58842"/><geometry><box size="0.0502614 0.0959779 0.0964906"/></geometry></collision>
+    <collision><origin xyz="0.188021 -0.00105363 -0.0212726" rpy="-0.513978 -0.0162678 1.58562"/><geometry><box size="0.0268355 0.0515478 0.0794286"/></geometry></collision>
+    <collision><origin xyz="-0.0418189 -0.000440622 -0.0318734" rpy="-0.0415884 0.926506 0.00415207"/><geometry><box size="0.0363203 0.0378577 0.0417791"/></geometry></collision>
+    <collision><origin xyz="0.0525852 -0.000440622 -0.000898801" rpy="-2.77692 -1.54066 -0.39317"/><geometry><box size="0.0369963 0.0375235 0.0415393"/></geometry></collision>
+    <collision><origin xyz="-0.000166546 -0.000440622 -0.000204666" rpy="1.57045 0.0541243 -0.000306577"/><geometry><box size="0.0449733 0.0449742 0.0360204"/></geometry></collision>
+    <collision><origin xyz="0.00120445 -0.0209404 -0.0037619" rpy="-1.88627 6.35839e-05 1.57076"/><geometry><box size="0.00500444 0.0574711 0.101621"/></geometry></collision>
+    <collision><origin xyz="0.00120445 0.0200595 -0.0037619" rpy="-1.88627 4.96509e-05 1.57077"/><geometry><box size="0.00500342 0.0574711 0.101621"/></geometry></collision>
+    <collision><origin xyz="-0.0520657 -0.000440622 0.0259751" rpy="3.12769 1.24832 3.13727"/><geometry><box size="0.0362427 0.0364382 0.0405254"/></geometry></collision>
   </link>
   <link name="right_rear_wheel">
-    <inertial><origin xyz="-0.000122816 -1.11022e-16 1.62264e-09" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="4.87891e-17" ixz="2.06549e-12" iyy="0.00617045" iyz="5.3668e-16" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="5.4003e-05 -1.11022e-16 6.88171e-05" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="1.21973e-16" ixz="2.50535e-10" iyy="0.00617045" iyz="-1.09775e-16" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/right_rear_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="right_middle_wheel">
-    <inertial><origin xyz="-4.65305e-05 2.55351e-15 7.63183e-05" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="-4.14707e-16" ixz="2.06375e-10" iyy="0.00617045" iyz="-3.90313e-16" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="-1.93584e-05 -3.33067e-16 0.00010347" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="1.70762e-16" ixz="6.78805e-11" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/right_middle_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="right_front_wheel">
-    <inertial><origin xyz="-7.63228e-05 3.9968e-15 -4.65287e-05" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="8.29415e-16" ixz="-1.53274e-10" iyy="0.00617045" iyz="-4.14707e-16" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="2.4481e-05 3.33067e-16 -9.83447e-05" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="1.21973e-16" ixz="6.02906e-11" iyy="0.00617045" iyz="9.75782e-17" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/right_front_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_rear_wheel">
-    <inertial><origin xyz="-0.000122816 -1.73472e-18 1.62264e-09" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="7.6233e-19" ixz="2.06544e-12" iyy="0.00617045" iyz="-7.6233e-19" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="5.4003e-05 -1.66533e-16 6.88171e-05" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="1.70762e-16" ixz="2.50535e-10" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/left_rear_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_middle_wheel">
-    <inertial><origin xyz="-4.51578e-05 -1.73472e-18 7.76908e-05" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="-7.6233e-19" ixz="2.06394e-10" iyy="0.00617045" iyz="-1.90582e-18" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="-1.93584e-05 -6.10623e-16 0.00010347" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="6.09864e-17" ixz="6.78804e-11" iyy="0.00617045" iyz="-9.75782e-17" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/left_middle_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <link name="left_front_wheel">
-    <inertial><origin xyz="-7.76953e-05 2.08167e-17 -4.5156e-05" rpy="0 0 0"/><mass value="1.00432"/>
-      <inertia ixx="0.00338652" ixy="5.33631e-18" ixz="-1.5324e-10" iyy="0.00617045" iyz="-5.71747e-19" izz="0.00338652"/></inertial>
+    <inertial><origin xyz="2.4481e-05 1.11022e-16 -9.83447e-05" rpy="0 0 0"/><mass value="1.00432"/>
+      <inertia ixx="0.00338652" ixy="-6.09864e-17" ixz="6.02907e-11" iyy="0.00617045" iyz="1.21973e-17" izz="0.00338652"/></inertial>
     <visual><geometry><mesh filename="package://cac_description/meshes/left_front_wheel.stl"/></geometry><material name="wheel"/></visual>
     <collision><origin xyz="0 0 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.11" length="0.06"/></geometry></collision>
   </link>
   <joint name="right_rocker_joint" type="revolute">
     <parent link="base_link"/><child link="right_rocker"/>
-    <origin xyz="0 -0.28 0" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.6" upper="0.6" effort="500" velocity="2"/><dynamics damping="0.5"/>
+    <origin xyz="0 -0.343691 0" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.6" upper="0.6" effort="500" velocity="2"/><dynamics damping="0.5"/>
   </joint>
   <joint name="left_rocker_joint" type="revolute">
     <parent link="base_link"/><child link="left_rocker"/>
-    <origin xyz="0 0.28 0" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.6" upper="0.6" effort="500" velocity="2"/><dynamics damping="0.5"/><mimic joint="right_rocker_joint" multiplier="-1" offset="0"/>
+    <origin xyz="0 0.343691 0" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.6" upper="0.6" effort="500" velocity="2"/><dynamics damping="0.5"/><mimic joint="right_rocker_joint" multiplier="-1" offset="0"/>
   </joint>
   <joint name="diff_bar_joint" type="revolute">
     <parent link="base_link"/><child link="diff_bar"/>
-    <origin xyz="-0.0941 -5.55112e-17 0.143" rpy="0 0 0"/><axis xyz="0 0 1"/><limit lower="-0.5" upper="0.5" effort="100" velocity="2"/><mimic joint="right_rocker_joint" multiplier="0.412439" offset="0"/>
+    <origin xyz="-0.094 0.000309387 0.1" rpy="0 0 0"/><axis xyz="0 0 1"/><limit lower="-0.5" upper="0.5" effort="100" velocity="2"/><mimic joint="right_rocker_joint" multiplier="0.411765" offset="0"/>
   </joint>
   <joint name="right_bogie_joint" type="revolute">
     <parent link="right_rocker"/><child link="right_bogie"/>
-    <origin xyz="0.5225 -0.0225 -0.1731" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.8" upper="0.8" effort="500" velocity="2"/><dynamics damping="0.5"/>
+    <origin xyz="0.35 0 -0.122" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.8" upper="0.8" effort="500" velocity="2"/><dynamics damping="0.5"/>
   </joint>
   <joint name="right_rear_wheel_joint" type="continuous">
     <parent link="right_rocker"/><child link="right_rear_wheel"/>
-    <origin xyz="-0.221009 -0.00475001 -0.636502" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="-0.348647 0.0201906 -0.37345" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
   <joint name="right_middle_wheel_joint" type="continuous">
     <parent link="right_bogie"/><child link="right_middle_wheel"/>
-    <origin xyz="-0.342601 0.01775 -0.421498" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="-0.334174 0.0201906 -0.254698" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
   <joint name="right_front_wheel_joint" type="continuous">
     <parent link="right_bogie"/><child link="right_front_wheel"/>
-    <origin xyz="0.408712 0.01775 -0.34272" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="0.187462 0.0201906 -0.259324" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
   <joint name="left_bogie_joint" type="revolute">
     <parent link="left_rocker"/><child link="left_bogie"/>
-    <origin xyz="0.5159 0.0225 -0.1793" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.8" upper="0.8" effort="500" velocity="2"/><dynamics damping="0.5"/>
+    <origin xyz="0.35 0 -0.122" rpy="0 0 0"/><axis xyz="0 1 0"/><limit lower="-0.8" upper="0.8" effort="500" velocity="2"/><dynamics damping="0.5"/>
   </joint>
   <joint name="left_rear_wheel_joint" type="continuous">
     <parent link="left_rocker"/><child link="left_rear_wheel"/>
-    <origin xyz="-0.221009 0.00525 -0.636502" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="-0.348647 -0.0201906 -0.37345" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
   <joint name="left_middle_wheel_joint" type="continuous">
     <parent link="left_bogie"/><child link="left_middle_wheel"/>
-    <origin xyz="-0.336107 -0.01725 -0.415159" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="-0.334174 -0.0201906 -0.254698" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
   <joint name="left_front_wheel_joint" type="continuous">
     <parent link="left_bogie"/><child link="left_front_wheel"/>
-    <origin xyz="0.415178 -0.01725 -0.3361" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
+    <origin xyz="0.187462 -0.0201906 -0.259324" rpy="0 0 0"/><axis xyz="0 1 0"/><limit effort="20" velocity="20"/><dynamics damping="0.05"/>
   </joint>
 </robot>
