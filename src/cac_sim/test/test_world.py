@@ -187,9 +187,11 @@ def test_lighting_and_hall_floor(tmp_path):
 
 @pytest.mark.parametrize('mode', ['tiles', 'mesh'])
 def test_terrain_sdf_carries_configured_friction(tmp_path, mode):
-    """Every sand collision emits terrain.friction as mu = mu2.
+    """Every sand collision emits terrain.friction for both engines.
 
-    Effective on the tiles' boxes; inert on mesh collisions in gz-sim 8 (arena.yaml).
+    ode mu = mu2 for dartsim, bullet friction = friction2 for bullet-featherstone.
+    dartsim: effective on the tiles' boxes, inert on mesh collisions. bullet-featherstone:
+    effective on both (README "How the sand drives").
     """
     cfg = config.load_config()
     cfg['terrain']['friction'] = 0.37
@@ -205,10 +207,78 @@ def test_terrain_sdf_carries_configured_friction(tmp_path, mode):
         assert ode is not None, c.get('name')
         assert float(ode.findtext('mu')) == pytest.approx(0.37)
         assert float(ode.findtext('mu2')) == pytest.approx(0.37)
+        bullet = c.find('surface/friction/bullet')     # bullet-featherstone reads only these
+        assert bullet is not None, c.get('name')
+        assert float(bullet.findtext('friction')) == pytest.approx(0.37)
+        assert float(bullet.findtext('friction2')) == pytest.approx(0.37)
     boxes = [c for c in cols if c.find('geometry/box') is not None]
     assert len(boxes) == (len(cols) - 1 if mode == 'tiles' else 0)
     assert config.load_config()['terrain']['friction'] == pytest.approx(0.5)
     assert config.load_config()['sand']['collision'] == 'tiles'   # the shipped default
+
+
+def _physics(root):
+    w = ET.parse(root / 'arena.sdf').getroot().find('world')
+    phys = w.findall('physics')
+    plugins = [p for p in w.findall('plugin') if p.get('name') == 'gz::sim::systems::Physics']
+    assert len(phys) == 1 and len(plugins) == 1
+    return phys[0].get('type'), plugins[0].findtext('engine/filename').strip()
+
+
+@pytest.mark.parametrize('engine,plugin', [
+    ('bullet-featherstone', 'gz-physics-bullet-featherstone-plugin'),
+    ('dart', 'gz-physics-dartsim-plugin')])
+def test_physics_block_reflects_config(tmp_path, engine, plugin):
+    """physics.engine sets BOTH <physics type> and the Physics system's <engine><filename>.
+
+    gz-sim 8 picks the engine from <engine><filename> (or --physics-engine), not from the type:
+    type="bullet-featherstone" alone still loads dartsim (README "Physics engine").
+    """
+    cfg = config.load_config()
+    cfg['physics'] = {'engine': engine}
+    root = world.write_world(cfg, config.load_layout('schematic'), tmp_path)
+    assert _physics(root) == (engine, plugin)
+
+
+def test_physics_default_and_cli_override(tmp_path):
+    assert config.load_config()['physics']['engine'] == 'bullet-featherstone'   # shipped default
+    for flag, want in ((None, 'bullet-featherstone'), ('dart', 'dart'),
+                       ('bullet-featherstone', 'bullet-featherstone')):
+        out = tmp_path / str(flag)
+        args = ['--layout', 'empty', '--out', str(out)]
+        args += ['--physics-engine', flag] if flag else []
+        subprocess.run([sys.executable, str(SCRIPT), *args], check=True, capture_output=True)
+        assert _physics(out / 'empty')[0] == want
+    bad = subprocess.run([sys.executable, str(SCRIPT), '--layout', 'empty', '--out',
+                          str(tmp_path / 'bad'), '--physics-engine', 'ode'], capture_output=True)
+    assert bad.returncode != 0
+
+
+def test_physics_engine_rejects_unknown():
+    cfg = config.load_config()
+    cfg['physics'] = {'engine': 'ode'}
+    with pytest.raises(ValueError):
+        world.physics_engine(cfg)
+    del cfg['physics']
+    assert world.physics_engine(cfg) == 'bullet-featherstone'
+
+
+def test_engine_changes_only_the_physics_block(tmp_path):
+    """Engines dart vs bullet-featherstone: same bytes except <physics> type and engine plugin."""
+    roots = {}
+    for eng in ('dart', 'bullet-featherstone'):
+        cfg = config.load_config()
+        cfg['physics'] = {'engine': eng}
+        roots[eng] = world.write_world(cfg, config.load_layout('schematic'), tmp_path / eng)
+    a, b = ((roots[e] / 'arena.sdf').read_text() for e in ('dart', 'bullet-featherstone'))
+    a = a.replace('type="dart"', 'type="bullet-featherstone"').replace(
+        'gz-physics-dartsim-plugin', 'gz-physics-bullet-featherstone-plugin')
+    assert a == b
+    others = [f.relative_to(roots['dart']) for f in roots['dart'].rglob('*')
+              if f.is_file() and f.name != 'arena.sdf']
+    assert others
+    for f in others:
+        assert filecmp.cmp(roots['dart'] / f, roots['bullet-featherstone'] / f, shallow=False), f
 
 
 def test_marker_geometry_lives_in_markers_module():
@@ -336,16 +406,20 @@ GOLDEN_SDF_SHA256 = {
     # 2026-10-27: terrain.friction 0.9 -> 0.5 (dry-sand estimate); only the terrain <mu>/<mu2>
     # bytes differ (checked by substituting 0.9 back: old hash reproduced). Inert in gz-sim 8.
     # 2026-10-28: sand.collision added; these are the 'mesh' mode bytes (no longer the default).
-    ('random', '3'): 'bdd551f87c4fa6cf15f8f79ba31edac8865e8343b27ee496bee0b62ebea350fa',
-    ('schematic', None): '1e5e39453a97d0ea7ec360ffd839c427dfa58fbc21bb4ce8c50e2c992429aab2',
+    # 2026-10-28 later (both tables): physics.engine bullet-featherstone (rover mimic joints) adds
+    # <engine><filename> to the Physics plugin + type="bullet-featherstone", and every sand
+    # collision gains <bullet><friction>/<friction2>. Checked: reverting just those two strings
+    # reproduces the previous hashes exactly (all four).
+    ('random', '3'): 'aa3055a55d00217e7b309714d48664d1ec0554c5679db968a776d71484ddd719',
+    ('schematic', None): '9cbfcdabc63c33f3618fd132848c1c7660240b99b12527d09be725531b964a93',
 }
 # 2026-10-28 later: crater patches subdivided 3 x 3 (review: small bowls were ~2 cm short).
 # --sand-collision tiles = the DEFAULT since 2026-10-28: only the terrain <collision> elements
 # differ from mesh mode; the visual mesh, textures and truth are byte-identical
 # (test_tiles_change_only_...).
 GOLDEN_SDF_SHA256_TILES = {
-    ('random', '3'): 'f797ec15ca13cbcaa0f106a70e79459b5173452e954fe476ac01902dcff2ee52',
-    ('schematic', None): '82e83162d6d4cc95784ec735b306401eac833ce7de75a9d64e35f8303b029be8',
+    ('random', '3'): 'e07843b735f68245e9fd1c12785dea5e6a3a52c5e4fca3a78db1b63fedcacfa5',
+    ('schematic', None): 'ba02f26ad853f279be9b46417f537d8718d20b53857d9484cc117984eaa8ca78',
 }
 
 

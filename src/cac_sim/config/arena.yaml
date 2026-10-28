@@ -135,18 +135,29 @@ situational_cameras:
   - {name: sitcam_sw, position: [-0.3, -0.3, 2.4], look_at: [4.5, 2.5, 0.0]}
   - {name: sitcam_ne, position: [9.3, 5.3, 2.4], look_at: [4.5, 2.5, 0.0]}
 
+physics:
+  # Team decision, not a rulebook value (so not ASSUMED): driven by our rover. cac_description's
+  # rocker-bogie differential is URDF <mimic> joints; gz-sim 8's dartsim does not support mimic
+  # constraints ("the chosen physics engine does not support mimic constraints") and the rover
+  # tips over. bullet-featherstone enforces them.
+  #   bullet-featherstone (default) | dart
+  # The world names the engine plugin in the Physics system (<engine><filename>): gz-sim 8 ignores
+  # <physics type> when it picks the engine. Override per run: generate_arena --physics-engine dart
+  # (or `gz sim --physics-engine gz-physics-dartsim-plugin`, which beats the world file).
+  engine: bullet-featherstone
+
 sand:
   albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
   tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
-  # Sand COLLISION shape (the visual mesh is the same either way). gz-sim 8 drops <surface> on
-  # mesh collisions, so terrain.friction only works on primitive shapes:
+  # Sand COLLISION shape (the visual mesh is the same either way).
   #   tiles (default): flat sand = a few static boxes (top z = 0) that carry terrain.friction; each
-  #     crater = a square mesh patch out to its outer radius + 5 cm (friction INERT there). The
-  #     tilled relief is visual only: the collision is flat outside the crater bowls. Costs some
-  #     physics time (a cylinder wheel gets 2 contacts on a box vs 1 on the mesh): headless uncapped
-  #     RTF -8 % (schematic) to -20 % (dense seed), still ~6.5x real time on 2 CPU cores.
-  #   mesh: one collision mesh over the whole arena, tilled relief included; friction INERT
-  #     everywhere (DART default mu 1.0). Slightly faster physics.
+  #     crater = a square mesh patch out to its outer radius + 5 cm. The tilled relief is visual
+  #     only: the collision is flat outside the crater bowls.
+  #   mesh: one collision mesh over the whole arena, tilled relief included.
+  # Friction (measured, README "How the sand drives"): bullet-featherstone (physics.engine default)
+  # honours terrain.friction on boxes AND meshes. dartsim drops <surface> on mesh collisions
+  # (AttachMeshShape), so on dart terrain.friction only works on the tiles' boxes: that is why
+  # tiles became the default. Physics cost: see README "Physics engine".
   #   Override per run: generate_arena --sand-collision mesh
   collision: tiles
 
@@ -154,10 +165,13 @@ terrain:
   # ASSUMED: Coulomb mu = mu2 of rubber/plastic wheels on dry loose sand. The sand's own shear
   # strength caps it: internal friction angle ~30-35 deg -> tan ~0.58-0.70 (Wong, Theory of Ground
   # Vehicles). Net traction of tyres on dry sand is lower, ~0.3-0.5. 0.5 sits in that band.
-  # INERT with sand.collision: mesh and inside crater patches: gz-sim 8 builds mesh
-  # collisions with AttachMeshShape and drops <surface>, so there the sand is DART's default mu
-  # 1.0. EFFECTIVE on flat sand with sand.collision: tiles (the boxes carry it). DART takes the MIN
-  # of the two surfaces' mu. Measured: README "How the sand drives".
+  # Emitted for both engines: <ode><mu>/<mu2> (dartsim) and <bullet><friction>/<friction2>
+  # (bullet-featherstone reads only these). The engines COMBINE it with the wheel's friction
+  # differently (measured, tan 0.5 tilt test):
+  #   bullet-featherstone: effective ~0.7 x sand x wheel (product; a collision with no <bullet>
+  #     tag counts as 1.0, e.g. the cac_description wheels). Effective on boxes and meshes.
+  #   dart: min(sand, wheel). Effective on the tiles' boxes only; INERT on mesh collisions
+  #     (crater patches, sand.collision: mesh), where the sand is DART's default 1.0.
   friction: 0.5
 
 situational_camera_sensor:

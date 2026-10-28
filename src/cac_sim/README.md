@@ -30,6 +30,8 @@ gz sim -s -r <world>      # headless server, no GUI
 gz sim -s -r --headless-rendering <world>   # headless, but cameras/LiDAR still render (slow PCs)
 ```
 
+The worlds select bullet-featherstone themselves (no `--physics-engine` needed); see "Physics engine".
+
 **Give every Gazebo its own partition.** Gazebo finds other Gazebo instances on the same network
 automatically, so two teammates on the same Wi-Fi (or two sims on one PC) silently connect: your
 window shows someone else's world, or your robot gets their commands. Put this in your `~/.bashrc`
@@ -63,7 +65,8 @@ From the source tree, `src/cac_sim/scripts/generate_arena` works the same. It pr
 | `--sitcams` | the two situational cameras, 1280x720 at 5 Hz, `/sitcam/<name>/image` |
 | `--overlay` | zones, target box and start footprint drawn on the sand (visual only, for debugging) |
 | `--low-gfx` | no shadows at all, for slow laptops (lighting is otherwise unchanged) |
-| `--sand-collision mesh\|tiles` | override `sand.collision` (default `tiles`: flat sand is boxes that honour `terrain.friction`). `mesh`: one collision mesh, friction inert, 8-20 % faster physics. See "How the sand drives" |
+| `--sand-collision mesh\|tiles` | override `sand.collision` (default `tiles`: flat sand is boxes, craters are mesh patches). `mesh`: one collision mesh with the tilled relief; on bullet-featherstone ~40 % slower physics, on dart friction-inert. See "How the sand drives" |
+| `--physics-engine bullet-featherstone\|dart` | override `physics.engine` (default `bullet-featherstone`: our rover's mimic joints need it). Sets `<physics type>` and the Physics system's `<engine>` plugin. See "Physics engine" |
 | `--vary-appearance` | off by default. Seeded change of the look only: light level, key direction, ambient, colour temperature, sand tint/brightness/contrast, rock palette, wall colour. Geometry, collision, layout and truth stay byte-identical. Ranges (all ASSUMED) in `arena.yaml` `appearance:` |
 | `--appearance-seed K` | seed for the look only (implies `--vary-appearance`); default is the layout seed, so "seed 7" stays one fixed scene |
 
@@ -140,31 +143,84 @@ Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for 
 - These numbers are from the sim, with sim noise. They show the shape of the problem, not the real
   sensor's performance. Re-measure on real sand.
 
+## Physics engine
+
+The worlds run on **bullet-featherstone** by default (`physics.engine` in `arena.yaml`, or
+`generate_arena --physics-engine dart`). It is a team decision driven by our rover: the
+`cac_description` rocker-bogie differential is URDF mimic joints, and gz-sim 8's default dartsim
+does not support mimic constraints ("the chosen physics engine does not support mimic
+constraints"). On dart the rover tips over (measured here: pitch -34.4 deg in the arena);
+bullet-featherstone enforces the mimics and it stands level.
+
+**`<physics type>` alone does not pick the engine in gz-sim 8.** Measured with `gz sim -v 4`:
+a world with `type="bullet-featherstone"` and a bare Physics plugin still loaded
+`gz::physics::dartsim::Plugin`. So the generated world also names the engine plugin in the
+Physics system:
+
+```xml
+<plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
+  <engine><filename>gz-physics-bullet-featherstone-plugin</filename></engine>
+</plugin>
+```
+
+With that, plain `gz sim -r arena.sdf` loads bullet-featherstone; you do **not** need
+`--physics-engine` on the command line. `gz sim --physics-engine gz-physics-dartsim-plugin ...`
+still overrides the world file (measured), for a one-off dart run. All 12 installed worlds load
+on bullet-featherstone with 0 `[Err]` / 0 `[Wrn]` (`-v 4`; it prints one `[Dbg]` that
+`CollisionPairMaxContacts` is unsupported).
+
+Speed, measured with the `cac_description` rover spawned in the start zone and shuttling at
+0.2 m/s (gz `DiffDrive`), headless, 2 pinned cores (`--cpuset-cpus 0,1`), CPU only
+(`LIBGL_ALWAYS_SOFTWARE=1`), RTF over 20 s:
+
+| World | bullet, `tiles` (default) | bullet, `mesh` | capped (`tiles`) |
+|---|---|---|---|
+| schematic | 4.82 / 4.93 / 5.07 | 3.04 | 1.00 |
+| dense seed 16 | 5.15 / 5.22 / 5.40 | 3.07 | 1.00 |
+
+On bullet-featherstone the whole-arena mesh is ~40 % slower than `tiles`, so `tiles` stays the
+default for speed as well as friction. (dart with the same rover ran 3.7-6.0 uncapped, but the
+rover had tipped over, so that is not a like-for-like number.)
+
 ## How the sand drives (measured in this sim)
 
-**On a mesh, sand friction does nothing in Gazebo Harmonic (gz-sim 8, dartsim).** The
-physics system builds mesh collisions with `AttachMeshShape`, which drops `<surface>`. So the sand
-mesh is DART's default mu 1.0 whatever `terrain.friction` says. DART takes the smaller mu of the two
-surfaces, so **the robot's wheel `<mu>` sets the friction.** Checked by tilting gravity to tan 0.5.
-Boxes (mu 1.0) sat still on the sand mesh at sand mu 0.3. They slid at box mu 0.3, and on a
-primitive box floor at mu 0.3.
+**The engine decides how sand friction works.** Measured by tilting gravity to tan 0.5 (a block
+slides when its effective mu < 0.5) with 0.2 m blocks on the generated schematic arena:
 
-What dartsim does honour (tested): `<mu>`, `<mu2>`, `<fdir1>`, and `<slip1>`/`<slip2>`
-(creep = slip x force, exactly). It honours them on primitive shapes, and on the robot's own
-wheels. Nothing on a mesh is honoured.
+| | bullet-featherstone (default) | dart |
+|---|---|---|
+| Tag it reads | `<bullet><friction>` / `<friction2>` only (`<ode><mu>` alone: ignored, stays at 1.0) | `<ode><mu>` / `<mu2>` only |
+| Sand on the tiles' boxes | honoured | honoured |
+| Sand on a mesh (crater patches, `--sand-collision mesh`) | honoured (sand mu 0.3 on the mesh: block slides) | INERT: DART default 1.0 (`AttachMeshShape` drops `<surface>`) |
+| Combining sand and wheel/block mu | ~0.7 x sand x block (product): block mu 1.0 holds at sand 0.75 and 0.8, sticks after 0.18 m at 0.70, slides at 0.68 and below; sand 1.0 x block 0.55 or 0.6 slides; symmetric in the two, same at 45 deg | min(sand, block): sand 0.5 holds, 0.45 slides; 0.6 x 0.6 holds |
+| A collision with no friction tag (e.g. the `cac_description` wheels) | counts as 1.0 | counts as 1.0 |
+| Anisotropic `fdir1` + `mu2`/`friction2` (1.0 along x, 0.3 across) | honoured (holds along, slides across) | honoured |
 
-**So the arena uses `sand.collision: tiles` by default, which makes the friction work on flat
-sand.** Flat sand becomes 8-27 static boxes, top at z = 0, that carry `terrain.friction`.
-Each crater is a mesh patch out to its outer radius + 5 cm. Friction is still inert on the patches
-(mu 1.0 there). The tilled relief (+/- 1.2 cm) is dropped from the collision: it stays in the
-picture only. Tilt test, tan 0.5, box mu 1.0: on tiles the boxes slide at sand mu 0.3 and hold at
-sand mu 0.9. On mesh mode (`--sand-collision mesh`) they hold at both.
+So every sand collision carries the friction twice, as `<ode>` and as `<bullet>`, and the
+tilt test still passes on both engines: box mu 1.0 on `tiles` slides at sand mu 0.3 and holds at
+sand mu 0.9. On mesh mode it slides at 0.3 on bullet and holds at both on dart.
 
-It costs some physics time, which is why `--sand-collision mesh` is still offered. A cylinder wheel gets 2 contact points on a
-box and 1 on the mesh. Rover shuttling, headless, 2 pinned cores, software GL, 3 runs each,
-uncapped RTF: schematic 7.2 (tiles) vs 7.8 (mesh), -8 %; dense seed 16 6.5 vs 8.2, -20 %. Capped,
-both hold RTF 1.00. `<max_contacts>` is not honoured, and the bullet collision detector does not fix
-it either.
+**What it means:** with the default bullet-featherstone and the rover's untagged wheels (1.0),
+the effective mu on sand is about 0.7 x `terrain.friction` = ~0.35 at the shipped 0.5, not 0.5.
+If you set wheel friction on the robot, it multiplies (wheel 0.5 on sand 0.5 gives ~0.18), it does
+not take the minimum as on dart.
+
+**Craters** (`tiles`: each crater is a mesh patch out to its outer radius + 5 cm; the tilled relief
+(+/- 1.2 cm) is dropped from the collision and stays in the picture only). A 5 cm sphere dropped
+on each crater centre rests 0.6-1.3 mm above `-depth_eff + r` on both engines (schematic: 3
+craters, `crater_field`: 8). **Rocks are solid** on bullet-featherstone: blocks slid into the 9
+schematic rocks either stopped flush against them (6, front face 0.11-0.17 m short of the rock
+centre) or were deflected round them (3); none passed through.
+
+On dart a cylinder wheel gets 2 contact points on a box and 1 on the mesh. `<max_contacts>` is
+not honoured by either engine.
+
+### Older drive measurements (dart, scratch test rover)
+
+Everything below was measured on **dart** before the switch, with a scratch test rover, and has
+**not** been re-run on bullet-featherstone. The friction rules differ (table above), so treat the
+numbers as the shape of the problem, not as current values. Dart, test rover shuttling, 3 runs:
+uncapped RTF schematic 7.2 (tiles) vs 7.8 (mesh); dense seed 16 6.5 vs 8.2.
 
 Test rover (scratch only, not in this package): 0.6 x 0.3 m, 18.4 kg, 4 wheels r 0.08 m,
 wheelbase 0.40 m, track 0.36 m, gz `DiffDrive` skid-steer, 5 N m per wheel.

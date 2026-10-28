@@ -179,8 +179,32 @@ def _pipes(cfg):
 
 
 def _sand_surface(mu):
-    return (f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode></friction>'
-            '</surface>')
+    """Sand friction for both engines.
+
+    dartsim reads <ode><mu>/<mu2>; bullet-featherstone reads ONLY <bullet><friction>/<friction2>
+    (measured: with <ode> alone bullet keeps its default 1.0).
+    """
+    return (f'<surface><friction><ode><mu>{_f(mu)}</mu><mu2>{_f(mu)}</mu2></ode>'
+            f'<bullet><friction>{_f(mu)}</friction><friction2>{_f(mu)}</friction2></bullet>'
+            '</friction></surface>')
+
+
+# physics.engine in arena.yaml -> (SDF <physics type>, gz-physics engine plugin). gz-sim 8 ignores
+# <physics type> when it picks the engine (measured: type="bullet-featherstone" alone still loads
+# dartsim), so the world also names the plugin in the Physics system's <engine><filename>.
+# `gz sim --physics-engine ...` on the command line still overrides the world file.
+PHYSICS_ENGINES = {
+    'bullet-featherstone': ('bullet-featherstone', 'gz-physics-bullet-featherstone-plugin'),
+    'dart': ('dart', 'gz-physics-dartsim-plugin'),
+}
+
+
+def physics_engine(cfg):
+    """`physics.engine` from arena.yaml: 'bullet-featherstone' (default) or 'dart'."""
+    eng = (cfg.get('physics') or {}).get('engine', 'bullet-featherstone')
+    if eng not in PHYSICS_ENGINES:
+        raise ValueError(f'physics.engine must be one of {sorted(PHYSICS_ENGINES)}, got {eng!r}')
+    return eng
 
 
 def sand_collision_mode(cfg):
@@ -194,10 +218,11 @@ def sand_collision_mode(cfg):
 def _terrain(cfg, rects=None, patch=True):
     """Sand model: visual mesh + collision.
 
-    mode 'mesh' (rects None): one collision mesh over the whole arena. gz-sim 8 drops <surface>
-    on mesh collisions, so the friction is inert (DART default mu 1.0).
+    mode 'mesh' (rects None): one collision mesh over the whole arena. On dartsim gz-sim 8 drops
+    <surface> on mesh collisions (friction inert, DART default mu 1.0); bullet-featherstone
+    honours it.
     mode 'tiles': one static box per rect (top at z = 0, down to -sand_depth), each carrying the
-    friction, plus the crater patch mesh when `patch` (friction inert on it, as above).
+    friction, plus the crater patch mesh when `patch` (friction as for 'mesh').
     """
     mu = cfg['terrain']['friction']
     surf = _sand_surface(mu)
@@ -398,16 +423,18 @@ def _lights(cfg, low_gfx, app=None):
     return out
 
 
-def _header(low_gfx, app=None):
+def _header(cfg, low_gfx, app=None):
     amb, bg = _f(AMBIENT, AMBIENT, AMBIENT, 1), _f(*BACKGROUND, 1)
     if app:
         t = np.asarray(app['tint'])
         amb = _f(*np.clip(AMBIENT * app['ambient'] * t, 0, 1), 1)
         bg = _f(*np.clip(np.array(BACKGROUND) * app['light_level'] * t, 0, 1), 1)
+    ptype, plugin = PHYSICS_ENGINES[physics_engine(cfg)]
     return (
-        '<physics name="1ms" type="dart"><max_step_size>0.001</max_step_size>'
+        f'<physics name="1ms" type="{ptype}"><max_step_size>0.001</max_step_size>'
         '<real_time_factor>1.0</real_time_factor></physics>'
-        '<plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>'
+        '<plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">'
+        f'<engine><filename>{plugin}</filename></engine></plugin>'
         '<plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>'
         '<plugin filename="gz-sim-scene-broadcaster-system"'
         ' name="gz::sim::systems::SceneBroadcaster"/>'
@@ -491,7 +518,7 @@ def write_world(cfg, layout, out_dir, markers=False, sitcams=False, overlay=Fals
         models.append(_overlay(cfg, layout))
 
     sdf = (f'<?xml version="1.0"?><sdf version="1.9"><world name="cac_arena">'
-           f'{_header(low_gfx, app)}'
+           f'{_header(cfg, low_gfx, app)}'
            f'{_lights(cfg, low_gfx, app)}{"".join(models)}</world></sdf>')
     (root / 'arena.sdf').write_text(_pretty(sdf))
 

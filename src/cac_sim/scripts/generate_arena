@@ -53,6 +53,10 @@ def main(argv=None):
     ap.add_argument('--sand-collision', choices=('mesh', 'tiles'), default=None,
                     help='override sand.collision in arena.yaml (tiles: flat sand = boxes that '
                          'honour terrain.friction; README "How the sand drives")')
+    ap.add_argument('--physics-engine', choices=('bullet-featherstone', 'dart'), default=None,
+                    help='override physics.engine in arena.yaml (default bullet-featherstone: '
+                         'the rover URDF needs mimic joints, which dartsim ignores; README '
+                         '"Physics engine")')
     ap.add_argument('--vary-appearance', action='store_true',
                     help='seeded lighting/colour variation (appearance: in arena.yaml); '
                          'geometry and truth unchanged')
@@ -66,6 +70,8 @@ def main(argv=None):
     cfg = config.resolve(config.load_config(cfg_path), a.marker_preset)
     if a.sand_collision:
         cfg['sand']['collision'] = a.sand_collision
+    if a.physics_engine:
+        cfg.setdefault('physics', {})['engine'] = a.physics_engine
 
     vary = a.vary_appearance or a.appearance_seed is not None
     layouts = []

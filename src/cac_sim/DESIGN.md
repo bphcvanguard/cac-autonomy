@@ -56,7 +56,7 @@ column is treated as its circumscribed circle in layout checks (conservative).
 
 ```
 generate_arena --layout schematic|empty|random|<file.yaml> [--seed N] [--count K] --out DIR
-               [--config arena.yaml] [--sand-collision mesh|tiles] [--markers] [--marker-preset frame_inner|perimeter_walls]
+               [--config arena.yaml] [--sand-collision mesh|tiles] [--physics-engine bullet-featherstone|dart] [--markers] [--marker-preset frame_inner|perimeter_walls]
                [--setup-sheet] [--sitcams] [--overlay] [--low-gfx] [--vary-appearance] [--appearance-seed K]
 ```
 
@@ -84,23 +84,32 @@ exit code 2; no world is written. Truth is generated only with `--out`: it is no
   Stream ids (all distinct; `test_rng_streams_distinct` checks seeds 0..20): layout obstacles `[s, 2]`,
   start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`, appearance variation `[appearance_seed, 70]` (`appearance.py`); geometry: textures 20-26 (sand etc.), crater
   rim `[s, 21, i]`, crater depth `[s, 22, i]`, rock shape `[s, 30, i]`, rock texture variants `[s, 50+k]`.
-- Sand collision (`sand.collision` in `arena.yaml`, default `tiles`; CLI `--sand-collision`). gz-sim 8 (dartsim) builds a
-  mesh collision with `AttachMeshShape` and drops its `<surface>`, so friction only acts on
-  primitive shapes. `tiles`: on the 8 cm collision grid, every cell touching the square of half-size
+- Physics engine (`physics.engine` in `arena.yaml`, default `bullet-featherstone`; CLI
+  `--physics-engine`). A team decision driven by the rover: `cac_description`'s rocker-bogie
+  differential is URDF mimic joints, which gz-sim 8's dartsim does not support (the rover tips
+  over). The world sets `<physics type>` AND the Physics system's
+  `<engine><filename>` (`gz-physics-bullet-featherstone-plugin` / `gz-physics-dartsim-plugin`): gz-sim 8 picks the engine
+  from the latter (or `gz sim --physics-engine`, which overrides the world file), never from the
+  type. Switching the engine changes only those two strings in `arena.sdf`
+  (`test_engine_changes_only_the_physics_block`).
+- Sand collision (`sand.collision` in `arena.yaml`, default `tiles`; CLI `--sand-collision`).
+  `tiles`: on the 8 cm collision grid, every cell touching the square of half-size
   `crater_outer_radius + 5 cm` around a crater is a crater-patch cell; all other cells are flat and
   are merged greedily (largest rectangle first) into static boxes, top at z = 0, bottom at
   `-sand_depth` (8-27 boxes on the shipped and random layouts). All boxes are collisions of the one
-  `terrain` link and carry `terrain.friction` as mu = mu2. The patch cells form one mesh
+  `terrain` link. The patch cells form one mesh
   (`terrain_collision.obj`, the 8 cm cells subdivided 3 x 3 so small bowls keep their depth to
   within 2.5 mm; at least one flat 8 cm cell inside every border) with the crater
   profile but WITHOUT the tilled relief, so every patch-border vertex is exactly z = 0 and meets the
-  box tops: no step or gap a wheel can catch (`geometry.sand_collision_tiles`). Friction is inert on
-  the patches (DART default mu 1.0). The tilled relief (+/- 1.2 cm) is therefore visual only. `mesh`:
-  one whole-arena collision mesh, relief included, friction inert everywhere. The visual
-  mesh, textures, layout and truth are byte-identical in both modes. `tiles` is the default
-  even though it costs physics time (a cylinder wheel gets 2 contact points on a box, 1 on the
-  mesh): headless uncapped RTF -8 % on the schematic, -20 % on a dense seed; both hold RTF 1.0 on 2
-  cores.
+  box tops: no step or gap a wheel can catch (`geometry.sand_collision_tiles`). The tilled relief
+  (+/- 1.2 cm) is therefore visual only. `mesh`: one whole-arena collision mesh, relief included.
+  The visual mesh, textures, layout and truth are byte-identical in both modes.
+- Sand friction: every sand collision carries `terrain.friction` twice, as `<ode><mu>/<mu2>`
+  (dartsim) and `<bullet><friction>/<friction2>` (bullet-featherstone reads only that).
+  bullet-featherstone honours it on boxes and meshes and combines it as ~0.7 x sand x wheel;
+  dartsim drops `<surface>` on mesh collisions (`AttachMeshShape`), so there it acts only on the
+  tiles' boxes, combined as min(sand, wheel). `tiles` became the default for dart's sake (on
+  bullet `mesh` would carry the friction too); measured costs in README "Physics engine".
 - Budgets so CPU-only laptops stay real-time: terrain visual <= 80k triangles, collision <= 20k,
   each rock <= 400 triangles (measured max ~216).
 - No network access at generation or load time. No Fuel URIs.
