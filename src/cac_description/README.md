@@ -62,8 +62,27 @@ The pose comes from a study (`cad/camera_mount_study.md`, figures `cad/camera_fi
 - **Self-occlusion:** none. 0 % of the depth rays hit the rover, even with the rover pitched 5° nose-down.
 - **Blind zone:** the first ground the camera sees is 0.24 m past the front wheels.
 - **Ground coverage:** 99 % of the band 0.6–4 m ahead, ±1 m to the sides.
-- **Craters:** a 40 cm × 6 cm crater is visible from about 2.4 m.
+- **Craters:** the study estimated a 40 cm × 6 cm crater is visible from about 2.4 m. The measured numbers are below.
 - **Markers:** every ArUco board (centre 0.35 m) stays in the colour image from 0.5 to 8 m. The margin at 8 m is 11°, or 6° with the rover pitched nose-down. That 8 m marker is what limits the pitch to about 23°.
+
+**Measured in the arena with this mounted camera.**
+
+The test put the rover at set distances, took one depth frame, and back-projected it to the world. A crater counts as detected when at least 10 depth points fall more than 3 cm below the sand.
+
+Maximum detection distance (crater straight ahead, distance from the camera's ground point, 0.5 m steps):
+
+| Crater width \ depth | 4 cm | 6 cm | ~7–10 cm (slope-capped) |
+|---|---|---|---|
+| 30 cm | 2.0 m | 2.0 m | 2.5 m |
+| 40 cm | 2.0 m | 2.5 m | 3.0 m |
+| 50 cm | 2.5 m | 3.0 m | ≥ 3.5 m |
+
+- With 7 mm Gaussian depth noise, the 40 × 6 cm crater is still detected at 2.5 m (32 points) and not at 3.0 m (4 points). The 50 × 6 cm crater is detected at 3.0 m (21 points).
+- **Flat sand:** zero points below −3 cm from 1 to 4 m, with or without noise. The lowest is −1.9 cm and the spread about 5 mm.
+- **A 30 cm × 15 cm boulder** is seen at 2, 3, 4 and 5 m (114 points at 5 m).
+- **Plan the speed around it:** a small, shallow crater is only reliably seen about 2 m ahead. The crater's own rim hides its near half, so only the far floor gets sampled.
+
+Real D455 noise grows with range and is worse on bright sand than this constant 7 mm, so expect these distances to be a little shorter on the real rover.
 
 **Bracket.** `cad/d455_bracket.step` and `.stl` are one PLA part, about 130 cm³, in `base_link` coordinates. Its parametric FreeCAD source is `tools/d455_bracket.py`. It has three parts:
 

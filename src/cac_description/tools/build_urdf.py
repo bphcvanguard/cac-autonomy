@@ -203,19 +203,23 @@ def camera_links(out_pkg, fmt_):
     if g:
         # Two sensors, not one rgbd_camera: in gz-sim 8 the rgbd_camera's colour image renders
         # unlit (geometry black, sky grey; measured). D455: colour ~90 deg, depth ~87 deg HFOV.
-        def sensor(sname, stype, topic, frame, hfov, extra=''):
+        def sensor(sname, stype, topic, frame, hfov, extra='', noise=None):
+            nz = (f'<noise><type>gaussian</type><mean>0</mean><stddev>{noise}</stddev></noise>'
+                  if noise else '')
             return (f'<sensor name="{sname}" type="{stype}"><update_rate>{g["rate"]}</update_rate>'
                     f'<topic>{topic}</topic><gz_frame_id>{frame}</gz_frame_id>'
                     f'<camera><horizontal_fov>{math.radians(hfov):.6g}</horizontal_fov>'
                     f'<image><width>{g["width"]}</width><height>{g["height"]}</height>{extra}'
                     f'</image><clip><near>{g["near"]}</near><far>{g["far"]}</far></clip>'
-                    '</camera><always_on>1</always_on><visualize>false</visualize></sensor>')
+                    f'{nz}</camera><always_on>1</always_on><visualize>false</visualize>'
+                    '</sensor>')
         out.append(f'  <gazebo reference="{name}_link">'
                    + sensor(f'{name}_color', 'camera', f'{name}/image',
                             f'{name}_color_optical_frame', g.get('color_hfov_deg', 90.0))
                    + sensor(f'{name}_depth', 'depth_camera', f'{name}/depth_image',
                             f'{name}_depth_optical_frame', g['hfov_deg'],
-                            '<format>R_FLOAT32</format>')
+                            '<format>R_FLOAT32</format>',
+                            noise=g.get('noise', 0.007))
                    + '</gazebo>')
     return out
 
