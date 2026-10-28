@@ -124,6 +124,33 @@ def solve_bogie_stance(wheel_c, side):
     return brentq(cross, -0.6, 0.6)
 
 
+def mirror_side(parts, source):
+    """Replace every rocker/bogie/wheel part of the other side by a mirror image of `source`'s.
+
+    The mirror plane is the body's centre plane (y of the base_link part's bounding-box centre).
+    Reflection flips triangle winding, so each mirrored triangle is re-ordered to keep its normal
+    pointing outwards (mass_props needs a positive volume). The body and the diff bar are kept.
+    """
+    other = 'right' if source == 'left' else 'left'
+    body = [r for lk, _, r in parts if lk == 'base_link' and r['name'].strip() == 'base_link']
+    y0 = centre(body[0])[1] * MM
+    for piv in (ROCKER_PIVOT, BOGIE_PIVOT):      # the pivots move with the mirrored side
+        piv[other] = piv[source] * np.array([1.0, -1.0, 1.0]) + np.array([0.0, 2 * y0, 0.0])
+    keep = [(lk, t, r) for lk, t, r in parts if not lk.startswith(other + '_')]
+    added = []
+    for lk, t, r in parts:
+        if not lk.startswith(source + '_'):
+            continue
+        m = t.copy()
+        m[:, :, 1] = 2 * y0 - m[:, :, 1]
+        m = m[:, ::-1, :]                                  # restore outward winding
+        b = list(r['bbox_mm'])
+        r2 = dict(r, name=r['name'] + ' (mirrored)',
+                  bbox_mm=[b[0], 2 * y0 / MM - b[4], b[2], b[3], 2 * y0 / MM - b[1], b[5]])
+        added.append((other + lk[len(source):], m, r2))
+    return keep + added
+
+
 def fmt(v):
     return ' '.join(f'{x:.6g}' for x in v)
 
@@ -155,6 +182,9 @@ def main():
     ap.add_argument('--front', choices=('-x', '+x'), default='-x',
                     help='which CAD end is the front (default -x: wheel/rod 1 end)')
     ap.add_argument('--total-mass', type=float, default=None, help='scale all masses to this (kg)')
+    ap.add_argument('--mirror-from', choices=('left', 'right'), default=None,
+                    help='rebuild the other side as a mirror image of this CAD side '
+                         '(internal CAD sense: left = CAD +y). Use when one side has newer joints')
     a = ap.parse_args()
 
     rows = json.load(open(a.parts_json))
@@ -171,6 +201,8 @@ def main():
         used[lbl] = k + 1
         tris = read_stl(os.path.join(a.parts_dir, files[lbl][k]))
         parts.append((link_of(r), tris, r))
+    if a.mirror_from:
+        parts = mirror_side(parts, a.mirror_from)
 
     wheel_c = [centre(r) * MM for (lk, _, r) in parts if lk.endswith('wheel')]
     beta = {s: solve_bogie_stance(wheel_c, s) for s in ('left', 'right')}
