@@ -3,6 +3,9 @@ build/
 install/
 log/
 
+# Generated arenas (generate_arena --out /workspace/arenas)
+arenas/
+
 # Bags and big data never go in git. Keep them on the team Drive.
 bags/
 *.db3

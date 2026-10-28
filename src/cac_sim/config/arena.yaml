@@ -1,0 +1,215 @@
+# CAC 2027 arena: the ONE source of truth for geometry and for the rules the randomiser obeys.
+# Frame `arena`: origin (0,0,0 deg) = bottom-left corner of the start zone = arena corner.
+# x along the 9 m side (west -> east), y along the 5 m side (south -> north), z up, z = 0 = sand surface.
+# Sources: rulebook "ARENA: Specifications" + schematic (docs/source in the planning repo).
+# Lights and colours are named constants at the top of world.py; everything else is here.
+# Every value marked ASSUMED is not in the rulebook. Confirm at the Pre-Task Briefing and update here.
+# Rectangles are [x_min, y_min, x_max, y_max] in metres.
+
+arena:
+  size: [9.0, 5.0]                  # "~9 m long and ~5.0 m wide"
+  sand_depth: 0.30                  # "~30 cm depth of sand", tilled and dry
+  wall:
+    # Not in the rulebook. The CAC arena text is copied from NASA Lunabotics; the KSC Artemis
+    # Arena has low light-beige walls ~0.4-0.6 m above the regolith. ASSUMED from that analogue.
+    height: 0.50
+    thickness: 0.08                 # ASSUMED
+    # Artemis also runs a ~17 cm PVC duct along the inside of the walls, lying on the sand.
+    # Unknown for CAC, so off (0.0). Set 0.17 to test it: it is a low obstacle along every wall.
+    inner_pipe_diameter: 0.0
+
+zones:
+  start: [0.0, 0.0, 2.0, 2.0]       # 2 x 2 m, no rocks or craters
+  obstacle: [0.0, 0.0, 5.0, 5.0]    # "5 m" label; the start zone sits inside it
+  excavation: [5.0, 0.0, 9.0, 5.0]  # "4 m" label; the only place sand may be dug
+  construction: [6.4, 3.0, 9.0, 5.0]  # 2.6 x 2.0 m, top-right corner
+
+berm:
+  # The rulebook table and the schematic disagree. Default = the SMALLER pair (design to the worst case).
+  #   table:     berm 1.3 x 0.7,   target 1.5 x 0.9
+  #   schematic: berm 1.7 x 0.83,  target 1.9 x 1.03
+  target_centre: [7.91, 4.26]       # measured from the schematic (zone-wise pixel mapping)
+  target_size: [1.5, 0.9]
+  target_size_schematic: [1.9, 1.03]
+
+column:
+  # "Arena has a central support structure column which is an obstacle and must be avoided."
+  # The CAC schematic does not draw it. That sentence is copied from the NASA Lunabotics guidebook,
+  # whose Artemis Arena drawing shows a SQUARE column of ~0.5 x 0.5 m near the arena centre (a
+  # box-truss tower). Photos seen by the team lead also suggest a rectangular column.
+  # ASSUMED: square 0.5 x 0.5 m at the arena centre, floor to ceiling. Confirm at the PTB.
+  shape: box                        # box | cylinder
+  centre: [4.5, 2.5]
+  size: [0.5, 0.5]                  # box: x and y extent; cylinder: size[0] = diameter
+  yaw_deg: 0.0
+  height: 3.0
+
+boulders:
+  # Obstacle zone: at least 3, diameter ~30-40 cm, "random heights", sitting ON the surface.
+  # Excavation zone: may contain boulders no bigger than the obstacle-zone ones.
+  diameter: [0.30, 0.40]
+  height: [0.12, 0.35]              # ASSUMED range for "random heights"
+  max_height_ratio: 0.85           # ASSUMED: natural boulders are rarely taller than wide
+  # The rock mesh's underside already extends 4 cm below its origin; the origin is placed `sink`
+  # below the local sand surface, so the rock sits ~5 cm into the sand and shows no gap.
+  sink: 0.01
+  # Rules: "at least three". Judges are free to place more, so we test a denser field than the
+  # minimum: the robot meets obstacles on its actual route more often.
+  min_in_obstacle_zone: 4           # ASSUMED (rules: >= 3; schematic shows 5)
+  max_in_obstacle_zone: 8           # ASSUMED
+  in_excavation_zone: [1, 4]        # ASSUMED (schematic shows 4)
+  in_construction_zone: [0, 0]      # rules 6 and 13 let judges push obstacles in; default off
+
+craters:
+  # Obstacle zone: at least 3, "varying depth and width, no wider or deeper than 40-50 cm".
+  # Depth is capped by the sand depth: a crater is a hole in the 30 cm sand layer.
+  diameter: [0.30, 0.50]
+  # Shape = shallow bowl + soft raised rim (geometry.crater_profile), sized by RATIOS to D.
+  # ASSUMED: simple impact craters have depth/diameter ~0.2; raked/dug sand dishes 0.1-0.25. The
+  # rulebook's "no deeper than 40-50 cm" is an upper bound only. D 0.3-0.5 m -> depth ~3-12 cm.
+  # A layout crater may override with `depth` (m) or `depth_ratio`.
+  depth_ratio: [0.10, 0.25]
+  rim_ratio: [0.04, 0.08]           # ASSUMED: rim crest height / D; layout override `rim` (m)
+  # Hard cap: dry sand cannot hold a steeper face (angle of repose ~30-35 deg, ~38 slightly damp).
+  # If a crater would be steeper, depth and rim are scaled down together (truth reports depth_eff).
+  max_slope_deg: 38.0
+  min_in_obstacle_zone: 4           # ASSUMED (rules: >= 3)
+  max_in_obstacle_zone: 7           # ASSUMED
+  in_excavation_zone: [1, 3]        # ASSUMED (schematic shows 1)
+
+randomiser:
+  # Judges build the field to "require obstacle detection, mapping, and navigation planning to determine
+  # a slalom route". A layout is valid only if a robot of this footprint can get from the start zone to
+  # the excavation zone without touching anything.
+  # ASSUMED: judges leave a route for a typical legal rover, so the path guarantee uses the
+  # organiser schematic's rover, 1.5 x 0.75 m. (The rules let teams orient the 1.5 x 0.75 x 1 m
+  # envelope, so a rover lying flat at 1.5 x 1.0 m is also legal; set [1.5, 1.0] to test that.)
+  # Do not shrink this to our own rover's size: real fields won't be tighter for us.
+  robot_footprint: [1.5, 0.75]      # stowed envelope from the rules (L x W)
+  clearance: 0.10                   # extra margin on every side of the robot when checking a path exists
+  min_gap_between_obstacles: 0.20   # edge to edge; real judges won't stack obstacles on each other
+  keep_off_walls: 0.25              # obstacles at least this far from any wall
+  start_zone_margin: 0.10           # obstacle extent (rim included) stays this far from the start zone
+  construction_zone_margin: 0.05    # same for the construction zone (obstacles of other zones)
+  start_pose_margin: 0.05           # robot footprint stays this far inside the start zone
+  require_slalom: true              # no straight eastward corridor (W + 2*clearance wide) from the
+                                    # start zone to the excavation zone: the route must weave
+  slalom_band: [2.0, 5.0]           # x range the robot must cross; most obstacles are drawn here
+  # Routes the rover will actually drive (arena frame, metres). With probability route_bias an
+  # obstacle is drawn within route_band of a route segment in its own zone, so obstacles sit ON the
+  # way more often than uniform placement would put them. The path checks still guarantee a way
+  # through. ASSUMED dig spot ~(6.6, 1.4); the haul route ends short of the berm target box.
+  route_bias: 0.55
+  route_band: 0.55                  # metres either side of the route line
+  routes:
+    travel: [[1.0, 1.0], [3.2, 1.6], [5.6, 1.8]]    # start zone -> excavation zone
+    haul: [[6.6, 1.4], [7.4, 2.4], [7.8, 3.3]]      # dig area -> towards the berm target box
+
+markers:
+  # Rules: max 4, "on the bin frame structure along the perimeter of the starting zone (2 sides)"
+  # + 1 on the start-zone wall, all below 60 cm. Disabled by default; enable with --markers.
+  # "Perimeter of the starting zone (2 sides)" can be read two ways, so there are two presets:
+  #   frame_inner:     on the start zone's two INNER edges (x = 2, y = 2), facing the field.
+  #                    Example layout from the stack handbook (ticket LOC-4), NOT final.
+  #   perimeter_walls: on the two arena walls that bound the start zone (west, south).
+  # Choose with `preset` here or `generate_arena --marker-preset NAME`. Organiser question open.
+  dictionary: DICT_4X4_50
+  size: 0.20                        # ASSUMED printed tag size (black square edge)
+  preset: frame_inner
+  presets:
+    frame_inner:
+      - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 2, position: [2.00, 0.40, 0.35], yaw_deg: 0}   # east side of the start zone, faces +x
+      - {id: 3, position: [0.80, 2.00, 0.35], yaw_deg: 45}  # north side of the start zone, faces NE
+    perimeter_walls:
+      - {id: 1, position: [0.00, 1.20, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 2, position: [0.00, 0.40, 0.35], yaw_deg: 0}   # west wall, faces +x
+      - {id: 3, position: [1.20, 0.00, 0.35], yaw_deg: 90}  # south wall, faces +y
+      - {id: 4, position: [0.40, 0.00, 0.35], yaw_deg: 90}  # south wall, faces +y
+
+situational_cameras:
+  # "Two situational awareness cameras will be available." Positions ASSUMED. Analogue: the NASA
+  # Lunabotics Artemis Arena hangs its pan-tilt cameras on the overhead truss ~8 ft (2.4 m) above
+  # the regolith (static cameras at ~0.75 m and ~3 m). With only two, diagonal corners cover the
+  # whole field, so: two opposite corners, just outside the walls, 2.4 m up, aimed at the centre.
+  - {name: sitcam_sw, position: [-0.3, -0.3, 2.4], look_at: [4.5, 2.5, 0.0]}
+  - {name: sitcam_ne, position: [9.3, 5.3, 2.4], look_at: [4.5, 2.5, 0.0]}
+
+physics:
+  # Team decision, not a rulebook value (so not ASSUMED). Default DART: it skid-steers the real
+  # rover (360 deg in place, arcs of the commanded radius; the team drives rover_sim.urdf with the
+  # mimic differential locked). bullet-featherstone enforces mimics but cannot turn the rover
+  # (0.2 deg of 360 at default torsional): use it for suspension studies only. README "Physics engine".
+  #   dart (default) | bullet-featherstone
+  # The world names the engine plugin in the Physics system (<engine><filename>): gz-sim 8 ignores
+  # <physics type> when it picks the engine. Override per run: generate_arena --physics-engine bullet-featherstone
+  # (or `gz sim --physics-engine gz-physics-bullet-featherstone-plugin`, which beats the world file).
+  engine: dart
+
+sand:
+  albedo: [0.75, 0.68, 0.55]        # dry tilled sand (light beige-tan, cf. NASA Artemis arena)
+  tilled_roughness: 0.012           # ASSUMED: +/- surface relief of tilled sand, metres
+  # Sand COLLISION shape (the visual mesh is the same either way).
+  #   tiles (default): flat sand = a few static boxes (top z = 0) that carry terrain.friction; each
+  #     crater = a square mesh patch out to its outer radius + 5 cm. The tilled relief is visual
+  #     only: the collision is flat outside the crater bowls.
+  #   mesh: one collision mesh over the whole arena, tilled relief included.
+  # Friction (measured, README "How the sand drives"): bullet-featherstone honours terrain.friction
+  # on boxes AND meshes. dartsim (the default engine) drops <surface> on mesh collisions
+  # (AttachMeshShape), so on dart terrain.friction only works on the tiles' boxes: that is why
+  # tiles became the default. Physics cost: see README "Physics engine".
+  #   Override per run: generate_arena --sand-collision mesh
+  collision: tiles
+
+terrain:
+  # ASSUMED: Coulomb mu = mu2 of rubber/plastic wheels on dry loose sand. The sand's own shear
+  # strength caps it: internal friction angle ~30-35 deg -> tan ~0.58-0.70 (Wong, Theory of Ground
+  # Vehicles). Net traction of tyres on dry sand is lower, ~0.3-0.5. 0.5 sits in that band.
+  # Emitted for both engines: <ode><mu>/<mu2> (dartsim) and <bullet><friction>/<friction2>
+  # (bullet-featherstone reads only these). The engines COMBINE it with the wheel's friction
+  # differently (measured, tan 0.5 tilt test):
+  #   bullet-featherstone: effective ~0.7 x sand x wheel (product; a collision with no <bullet>
+  #     tag counts as 1.0, e.g. the cac_description wheels). Effective on boxes and meshes.
+  #   dart: min(sand, wheel). Effective on the tiles' boxes only; INERT on mesh collisions
+  #     (crater patches, sand.collision: mesh), where the sand is DART's default 1.0.
+  friction: 0.5
+  # Spinning (torsional) friction of the sand. SDF defaults it to 1.0 when absent. Harmless on DART
+  # (not read there); REQUIRED on bullet-featherstone, where the default pinned the real rover (0.2 deg
+  # of a commanded 360, stuck in an 11 cm crater; README 'How the sand drives'). Keep 0.
+  torsional: 0.0
+
+situational_camera_sensor:
+  # Sensor shared by both situational cameras above. ASSUMED (the rules give no spec).
+  fov: 1.2                          # horizontal field of view, rad
+  resolution: [1280, 720]           # px
+  rate_hz: 5
+  clip: [0.1, 40.0]                 # near, far, m
+
+appearance:
+  # Used only with --vary-appearance (generate_arena) / write_world(vary_appearance=True). Each entry
+  # is a [min, max] range drawn uniformly per appearance seed; nothing here changes geometry,
+  # collision, layout or truth. Every range is ASSUMED: the real venue's lighting and paint are
+  # unknown, so the ranges only bracket "plausible indoor hall" for perception-robustness tests.
+  light_level: [0.6, 1.2]           # ASSUMED: x on all lamps/key/ambient; dim hall .. bright hall (above ~1.2 the sand clips white)
+  ambient_factor: [0.8, 1.2]        # ASSUMED: extra x on ambient (bounce light from walls/floor)
+  color_temp_k: [3500, 6000]        # ASSUMED: warm tungsten/halogen .. cool white LED/daylight mix
+  key_elevation_deg: [55, 80]       # ASSUMED: key light height; default rig is ~71 deg
+  key_azimuth_jitter_deg: [-40, 40] # ASSUMED: swing of the key around the default heading
+  sand_brightness: [0.82, 1.05]     # ASSUMED: x on albedo; dry light tan .. slightly damp/darker
+  sand_grey_mix: [0.0, 0.35]        # ASSUMED: share blended toward grey (dusty/greyer sand)
+  sand_tint_jitter: [0.0, 0.04]     # ASSUMED: max per-channel tint scatter of the sand colour
+  sand_contrast: [0.7, 1.4]         # ASSUMED: x on grain/clump contrast (fine .. coarser sand)
+  rock_brightness: [0.8, 1.1]       # ASSUMED: x on rock texture colour
+  wall_greyness: [0.0, 1.0]         # ASSUMED: 0 = beige paint, 1 = light grey
+  wall_lightness: [0.92, 1.08]      # ASSUMED: x on wall colour; beige .. off-white .. light grey
+
+our_rover:
+  # Our rover (the old Vanguard rocker-bogie with the new joints), for the test harness: spawn
+  # size, clearance and contact checks. NOT used by the randomiser (randomiser.robot_footprint).
+  # From the CAD NEW JOINTS KESHAV ASSEMBLY.step standing on flat ground (left side mirrored from
+  # the updated right side); URDF in cac_description.
+  # W is 0.7505 m in the CAD: 0.5 mm OVER the rules' 0.75 m stowed width (robot_footprint).
+  # It comes from the mirrored left side; measure the real rover.
+  footprint: [1.11, 0.7505]         # L x W, metres (wheelbase 0.89, track 0.65)
+  height: 0.68                      # metres standing, body only; 0.698 to the top of the D455
+  mass_kg: null                     # TO BE WEIGHED (BCP-mass divides by it); CAD estimate ~21 kg

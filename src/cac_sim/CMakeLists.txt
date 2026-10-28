@@ -1,5 +1,57 @@
 cmake_minimum_required(VERSION 3.8)
 project(cac_sim)
+
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+
+ament_python_install_package(cac_sim_gen)
+
+install(DIRECTORY config layouts DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/generate_arena DESTINATION lib/${PROJECT_NAME})
+
+# Generate the default worlds at build time and install them to share/cac_sim/worlds/:
+# schematic, empty, the five stress layouts (gate .. start_trap, ~2.4 s each), seed_0001 .. seed_<_n_random>. Re-runs when the config, layouts, python or script change.
+# All URIs in the SDF are relative, so the installed directories are relocatable.
+file(GLOB_RECURSE _gen_deps CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/config/*.yaml
+  ${CMAKE_CURRENT_SOURCE_DIR}/layouts/*.yaml
+  ${CMAKE_CURRENT_SOURCE_DIR}/cac_sim_gen/*.py)
+set(_n_random 5)     # the ONLY place that says how many random worlds ship
+set(_worlds_dir ${CMAKE_CURRENT_BINARY_DIR}/worlds)
+set(_worlds_stamp ${CMAKE_CURRENT_BINARY_DIR}/worlds.stamp)
+set(_gen ${CMAKE_COMMAND} -E env PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+         python3 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_arena)
+add_custom_command(
+  OUTPUT ${_worlds_stamp}
+  COMMAND ${CMAKE_COMMAND} -E remove_directory ${_worlds_dir}
+  COMMAND ${_gen} --layout schematic --out ${_worlds_dir}
+  COMMAND ${_gen} --layout empty --out ${_worlds_dir}
+  COMMAND ${_gen} --layout gate --out ${_worlds_dir}
+  COMMAND ${_gen} --layout column_pinch --out ${_worlds_dir}
+  COMMAND ${_gen} --layout crater_field --out ${_worlds_dir}
+  COMMAND ${_gen} --layout busy_dig --out ${_worlds_dir}
+  COMMAND ${_gen} --layout start_trap --out ${_worlds_dir}
+  COMMAND ${_gen} --layout random --seed 1 --count ${_n_random} --out ${_worlds_dir}
+  # Delete truth/ from the generated worlds. The install PATTERN "truth" EXCLUDE below only
+  # works for copied installs: `colcon build --symlink-install` (what dev.sh uses) links the
+  # whole worlds tree, and truth/ would leak into share/ where any node can read it.
+  COMMAND python3 -c "import glob, shutil; [shutil.rmtree(d) for d in glob.glob('${_worlds_dir}/*/truth')]"
+  COMMAND ${CMAKE_COMMAND} -E touch ${_worlds_stamp}
+  DEPENDS ${_gen_deps} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_arena
+  COMMENT "cac_sim: generating default arena worlds"
+  VERBATIM)
+add_custom_target(cac_sim_worlds ALL DEPENDS ${_worlds_stamp})
+# Ground truth (truth.yaml, map.png) is NOT installed anywhere: any node can read share/. The test
+# harness generates the arena it tests on (generate_arena --out) and keeps the truth itself.
+install(DIRECTORY ${_worlds_dir}/ DESTINATION share/${PROJECT_NAME}/worlds
+  PATTERN "truth" EXCLUDE)
+
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  # runs every test/test_*.py, including test_flake8.py (ament_flake8, max line length 99)
+  ament_add_pytest_test(cac_sim_tests test
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+    TIMEOUT 600)
+endif()
 
 ament_package()

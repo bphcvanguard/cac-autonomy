@@ -4,7 +4,7 @@ The autonomy software for **Project Vanguard (BITS Pilani, Hyderabad)** in the *
 
 **Stack:** Ubuntu 24.04 · ROS 2 Jazzy · Gazebo Harmonic (`ros_gz`) · Nav2 · robot_localization · ros2_control · Python 3.12
 
-> This repository is a **starting skeleton**. The packages are intentionally empty. Each pod builds its own package. What's fixed is *where* code lives and *how* we work together.
+> This repository is a **starting skeleton**. Two packages are ready to use: `cac_sim` (the competition arena in Gazebo) and `cac_description` (our rover's URDF). The others are intentionally empty: each pod builds its own. What's fixed is *where* code lives and *how* we work together.
 
 ---
 
@@ -169,6 +169,33 @@ The `robot` stage is the base layer only (no GUI, no Gazebo), for the rover's on
 
 ---
 
+## The arena in simulation
+
+`cac_sim` builds the competition arena as a Gazebo world: 9 × 5 m of tilled sand, with boulders, craters, the central column and walls, plus a randomiser that makes new obstacle fields the way the judges would. After `colcon build`:
+
+```bash
+source install/setup.bash
+export GZ_PARTITION=$USER-$(hostname)    # set this BEFORE starting gz (see below)
+gz sim -r $(ros2 pkg prefix cac_sim)/share/cac_sim/worlds/schematic/arena.sdf
+ros2 run cac_sim generate_arena --layout random --seed 42 --count 10 --out /workspace/arenas
+ros2 run cac_sim generate_arena --layout random --seed 7 --setup-sheet --out /workspace/arenas
+```
+
+- **The window needs a desktop display.** Docker users: run `gz sim -r ...` from `./scripts/dev.sh sh`, which forwards the display. Without a display, run headless instead: `gz sim -s -r -v 3 <world>`. The `-v 3` prints progress so you can see it is running. Press Ctrl-C to stop.
+- **Use `--out /workspace/arenas` in Docker.** `~/arenas` would land in the container's home. `/workspace/arenas` is `arenas/` in your clone on the laptop (it is gitignored).
+- **The setup sheet** (for building the layout on a real mock arena) lands in `arenas/seed_0007/truth/setup_sheet.md` and `arenas/seed_0007/truth/setup_plan.png`.
+- **`GZ_PARTITION`:** Gazebo finds every other Gazebo on the same network. This name keeps yours private. Set it before starting `gz`, and put it in `~/.bashrc` inside the container.
+- **`info [schematic] ...` or `info [empty] ...` lines during `colcon build` are normal.** They are rulebook deviations of the fixed example layouts, not errors.
+- **Installed worlds** (swap the name in the `gz sim` path):
+  - `schematic`: the organiser's example.
+  - `empty`
+  - `seed_0001` to `seed_0005`: random fields.
+  - Stress tests that target known failure modes: `gate` (a gap barely wide enough to turn through), `column_pinch` (the route passes the column next to a crater), `crater_field` (shallow craters on the route), `busy_dig` (a crowded dig-to-berm trip) and `start_trap` (the rover must turn before it can leave the start zone).
+
+**Our rover in the arena** (needs `cac_description`): add `--robot $(ros2 pkg prefix cac_description)/share/cac_description/urdf/rover_sim.urdf` to `generate_arena`. The rover appears in the start zone. See [`src/cac_description/README.md`](src/cac_description/README.md).
+
+All geometry, and every assumption the rulebook leaves open, lives in `src/cac_sim/config/arena.yaml`. Details, flags, what the sensors can see, and the ground-truth rule are in [`src/cac_sim/README.md`](src/cac_sim/README.md).
+
 ## Verify your setup
 
 Post a screenshot of these on your onboarding issue:
@@ -213,6 +240,7 @@ Useful commands: `git status` · `git diff` · `git add -p` · `git fetch && git
 | `dev.sh up` fails: `error gathering device information … /dev/dri` | You forced `CAC_GPU=dri` on a machine without a GPU device | `CAC_GPU=none ./scripts/dev.sh up` |
 | Gazebo: `OpenGL 3.3 is not supported` / `Failed to create dummy render window` | GPU too old, or the container can't open the GPU | `gz sim --render-engine ogre …`, or `./scripts/dev.sh down && CAC_GPU=none ./scripts/dev.sh up` |
 | A Gazebo world hangs at start; log shows `fuel.gazebosim.org` | The world downloads models and the network blocks Fuel | Vendor the models into `cac_sim`; never `<include>` a Fuel URL |
+| Gazebo shows someone else's world, or your robot moves on its own | Two Gazebo instances on the same network found each other | Give each one its own channel: `export GZ_PARTITION=$USER-$(hostname)` (add it to `~/.bashrc`) |
 | `cannot open display` / no window appears | X11 access not allowed | Run `xhost +local:` on the host, and check `echo $DISPLAY` is set before `dev.sh up` |
 | `Permission denied` in `build/` or `install/` | Those folders were created by root (e.g. an old container) | `sudo rm -rf build install log` on the host, then rebuild |
 | `rosdep install` fails with "rosdep update" errors | rosdep cache missing | `rosdep update`, then retry |

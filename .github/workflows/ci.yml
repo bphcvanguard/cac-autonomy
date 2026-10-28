@@ -20,6 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Keep downloaded .deb packages between runs: Gazebo and Nav2 are large and the apt
+      # mirrors are slow. The ROS image deletes archives after install, so turn that off first.
+      - name: keep apt downloads
+        run: rm -f /etc/apt/apt.conf.d/docker-clean
+
+      - name: month stamp
+        id: date
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: apt cache
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: apt-${{ runner.os }}-jazzy-${{ steps.date.outputs.month }}-${{ hashFiles('src/**/package.xml') }}
+          restore-keys: apt-${{ runner.os }}-jazzy-
+
       - name: rosdep install
         run: |
           apt-get update

@@ -1,0 +1,26 @@
+# The organiser schematic's example layout, digitised from the drawing's pixels.
+# The schematic is NOT to scale (its obstacle/excavation split is drawn at ~4.5 m but labelled 5 m),
+# so positions were mapped zone by zone: obstacle zone pixels -> 0..5 m, excavation pixels -> 5..9 m.
+# Expect +/- 0.2 m. Sizes come from the drawing's labels ("30cm rock", "50cm crater").
+# NOTE: the schematic draws only 2 craters in the obstacle zone (the rules say at least 3), and does not
+# draw the central column at all. The column below is the arena.yaml default and is NOT from the drawing.
+name: schematic
+seed: null
+boulders:
+  - {position: [4.40, 4.61], diameter: 0.33, height: 0.25}
+  - {position: [2.91, 4.35], diameter: 0.33, height: 0.20}
+  - {position: [1.61, 3.12], diameter: 0.30, height: 0.18}
+  - {position: [4.54, 1.20], diameter: 0.33, height: 0.30}
+  - {position: [3.68, 0.46], diameter: 0.33, height: 0.22}
+  - {position: [5.84, 3.75], diameter: 0.33, height: 0.20}
+  - {position: [6.81, 2.46], diameter: 0.33, height: 0.25}
+  - {position: [8.76, 2.41], diameter: 0.31, height: 0.18}
+  - {position: [7.20, 0.69], diameter: 0.33, height: 0.22}
+# Crater depths are NOT given: the drawing has no depths, and absolute 20-30 cm values in a 50 cm
+# crater made steep cones. Depth and rim come from arena.yaml craters.depth_ratio / rim_ratio
+# (drawn per crater from the seed), giving realistic shallow bowls.
+craters:
+  - {position: [1.11, 3.92], diameter: 0.50}
+  - {position: [4.25, 1.75], diameter: 0.50}   # drawn at (4.41, 2.16); moved clear of the column
+  - {position: [8.69, 0.34], diameter: 0.50}
+start_pose: {x: 0.9, y: 0.9, yaw_deg: 0.0}

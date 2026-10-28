@@ -3,11 +3,21 @@
 <package format="3">
   <name>cac_sim</name>
   <version>0.0.1</version>
-  <description>Gazebo Classic arena world (9 x 5 m) and randomiser</description>
+  <description>Gazebo Harmonic arena world (9 x 5 m sand arena) generator and seeded obstacle randomiser</description>
   <maintainer email="cac-autonomy@bphcvanguard.example">CAC Autonomy</maintainer>
   <license>Proprietary</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <depend>python3-numpy</depend>
+  <depend>python3-yaml</depend>
+
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_flake8</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

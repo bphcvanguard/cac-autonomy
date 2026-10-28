@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Generate CAC arena worlds for Gazebo Harmonic. See cac_sim/README.md."""
+import argparse
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+
+
+def _setup_paths():
+    """Return the packaged share/cac_sim dir (or None in the source tree) and fix sys.path.
+
+    Works from the source tree, from an installed (but not sourced) prefix, and when sourced.
+    """
+    if (HERE.parent / 'cac_sim_gen').is_dir():                  # source tree
+        sys.path.insert(0, str(HERE.parent))
+        return None
+    prefix = HERE.parent.parent                                  # <prefix>/lib/cac_sim/..
+    for pat in ('python3*/site-packages', 'python3*/dist-packages', 'python3/dist-packages'):
+        for cand in sorted((prefix / 'lib').glob(pat)):
+            if (cand / 'cac_sim_gen').is_dir():
+                sys.path.insert(0, str(cand))
+    share = prefix / 'share' / 'cac_sim'
+    return share if share.is_dir() else None
+
+
+def _nonneg_int(v):
+    n = int(v)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f'must be >= 0, got {n}')
+    return n
+
+
+def main(argv=None):
+    share = _setup_paths()
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--layout', default='schematic',
+                    help='schematic | empty | random | path/to/layout.yaml (default: schematic)')
+    ap.add_argument('--seed', type=int, default=1, help='random layout seed (default 1)')
+    ap.add_argument('--count', type=int, default=1, help='random: seeds SEED..SEED+COUNT-1')
+    ap.add_argument('--config', default=None, help='arena.yaml override (default: packaged)')
+    ap.add_argument('--out', required=True, help='output directory; one sub-directory per world')
+    ap.add_argument('--markers', action='store_true', help='add ArUco marker boards')
+    ap.add_argument('--marker-preset', default=None,
+                    help='marker layout from arena.yaml markers.presets '
+                         '(frame_inner | perimeter_walls)')
+    ap.add_argument('--setup-sheet', action='store_true',
+                    help='also write truth/setup_sheet.md + setup_plan.png: how to build this '
+                         'layout by hand on a real mock arena (reveals obstacle positions)')
+    ap.add_argument('--robot', default=None, metavar='URDF',
+                    help="put this URDF at the layout's start pose (needs `gz`); for the team's "
+                         'rover on DART use cac_description urdf/rover_sim.urdf')
+    ap.add_argument('--sitcams', action='store_true', help='add the two situational cameras')
+    ap.add_argument('--overlay', action='store_true', help='draw zones and target (visual only)')
+    ap.add_argument('--low-gfx', action='store_true', help='no shadows (slow laptops)')
+    ap.add_argument('--sand-collision', choices=('mesh', 'tiles'), default=None,
+                    help='override sand.collision in arena.yaml (tiles: flat sand = boxes that '
+                         'honour terrain.friction; README "How the sand drives")')
+    ap.add_argument('--physics-engine', choices=('bullet-featherstone', 'dart'), default=None,
+                    help='override physics.engine in arena.yaml (default dart: skid-steer '
+                         'turning works; bullet-featherstone enforces mimic joints but cannot '
+                         'turn; README "Physics engine")')
+    ap.add_argument('--vary-appearance', action='store_true',
+                    help='seeded lighting/colour variation (appearance: in arena.yaml); '
+                         'geometry and truth unchanged')
+    ap.add_argument('--appearance-seed', type=_nonneg_int, default=None,
+                    help='seed for the look only (implies --vary-appearance); default = the '
+                         'layout seed')
+    a = ap.parse_args(argv)
+
+    from cac_sim_gen import config, layout as layout_mod, world
+    cfg_path = a.config or (share / 'config' / 'arena.yaml' if share else None)
+    cfg = config.resolve(config.load_config(cfg_path), a.marker_preset)
+    if a.sand_collision:
+        cfg['sand']['collision'] = a.sand_collision
+    if a.physics_engine:
+        cfg.setdefault('physics', {})['engine'] = a.physics_engine
+
+    vary = a.vary_appearance or a.appearance_seed is not None
+    layouts = []
+    if a.layout == 'random':
+        for s in range(a.seed, a.seed + max(a.count, 1)):
+            lay = layout_mod.random_layout(cfg, s)
+            lay['name'] = f'seed_{s:04d}'
+            layouts.append(lay)
+    elif a.layout == 'empty':
+        layouts.append(config.empty_layout(cfg))
+    elif share and not Path(a.layout).suffix:
+        layouts.append(config.load_layout(share / 'layouts' / f'{a.layout}.yaml'))
+    else:
+        layouts.append(config.load_layout(a.layout))
+
+    if a.markers:
+        try:
+            world.check_marker_support(cfg)
+        except world.MarkerError as e:
+            print(f'error: --markers: {e}', file=sys.stderr)
+            return 2
+        for p in world.check_markers(cfg):
+            print(f'warning [markers]: {p}', file=sys.stderr)
+    for lay in layouts:
+        # hard = physically wrong (overlaps, outside, no path); strict-only = rulebook deviations
+        hard = layout_mod.check_layout(cfg, lay, strict=False)
+        for p in hard:
+            print(f'warning [{lay["name"]}]: {p}', file=sys.stderr)
+        for p in layout_mod.check_layout(cfg, lay, strict=True):
+            if p not in hard:
+                print(f'info [{lay["name"]}]: {p}', file=sys.stderr)
+        try:
+            root = world.write_world(cfg, lay, a.out, markers=a.markers, sitcams=a.sitcams,
+                                     overlay=a.overlay, low_gfx=a.low_gfx,
+                                     vary_appearance=vary, appearance_seed=a.appearance_seed,
+                                     robot_urdf=a.robot)
+        except world.MarkerError as e:
+            print(f'error: --markers: {e}', file=sys.stderr)
+            return 2
+        except RuntimeError as e:          # robot.RobotError: bad URDF, no gz, missing mesh
+            print(f'error: --robot: {e}', file=sys.stderr)
+            return 2
+        if a.setup_sheet:
+            sheet = layout_mod.setup_sheet(cfg, lay, a.out, markers=a.markers)
+            print(f'  set-up sheet: {sheet}')
+        print(f'{root}\n  gz sim -r {root / "arena.sdf"}')
+    print(f'WARNING: {a.out}/<name>/truth/ is ground truth for the test harness and scoring only. '
+          'The robot stack must never read it.')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

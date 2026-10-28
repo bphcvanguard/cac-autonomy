@@ -1,0 +1,37 @@
+# STRESS LAYOUT: crater_field
+# Run: generate_arena --layout crater_field --out /tmp/arenas
+#
+# What it stresses: crater detection, the hardest perception case. Seven SHALLOW craters (depth_ratio
+# 0.10-0.12, so 4.0-5.0 cm deep for 40-50 cm wide) are clustered on the travel route
+# (arena.yaml randomiser.routes.travel: start zone -> (3.2, 1.6) -> excavation zone, x = 2.4 .. 4.3 m),
+# with only four boulders, all kept to the edges of the field (the excavation zone holds one crater and two
+# boulders, above the config minimum of one each, also placed far from the route; the rules set none).
+# Why: README 'What the sensors see': craters like these show up on the depth camera only at 2-3 m
+# and on the 16-beam LiDAR only at 1-2 m. A planner that trusts a boulder-only costmap drives
+# straight into the cluster. The craters here are the minimum depth the layout limits allow.
+# A good robot: slows down or stops to look at the cluster, builds negative-obstacle cells from the
+# depth data (not only from positive height), and either weaves through the gaps or goes round the
+# cluster to the north (it is not walled in; the SE(2) path in truth/map.png goes round). It must
+# NOT drive straight over the cluster.
+# Start pose: (1.0, 1.0), yaw 0 deg = facing east, towards the cluster.
+#
+# Strict check: passes with no issues.
+name: crater_field
+seed: null
+boulders:
+  - {position: [2.6, 3.9], diameter: 0.35, height: 0.2}
+  - {position: [4.1, 4.1], diameter: 0.35, height: 0.25}
+  - {position: [3, 0.4], diameter: 0.3, height: 0.2}
+  - {position: [1.6, 4.3], diameter: 0.35, height: 0.22}
+  - {position: [6, 0.8], diameter: 0.35, height: 0.25}
+  - {position: [8, 0.8], diameter: 0.35, height: 0.22}
+craters:
+  - {position: [3.31, 1.14], diameter: 0.5, depth_ratio: 0.1}
+  - {position: [3.36, 2.11], diameter: 0.4, depth_ratio: 0.12}
+  - {position: [2.69, 2.02], diameter: 0.4, depth_ratio: 0.1}
+  - {position: [3.96, 0.78], diameter: 0.4, depth_ratio: 0.11}
+  - {position: [4.02, 1.63], diameter: 0.4, depth_ratio: 0.1}
+  - {position: [2.61, 1.4], diameter: 0.4, depth_ratio: 0.1}
+  - {position: [2.4, 0.73], diameter: 0.4, depth_ratio: 0.11}
+  - {position: [7.5, 1.2], diameter: 0.4, depth_ratio: 0.12}
+start_pose: {x: 1, y: 1, yaw_deg: 0}
