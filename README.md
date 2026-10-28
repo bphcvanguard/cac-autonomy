@@ -186,6 +186,11 @@ ros2 run cac_sim generate_arena --layout random --seed 7 --setup-sheet --out /wo
 - **The setup sheet** (for building the layout on a real mock arena) lands in `arenas/seed_0007/truth/setup_sheet.md` and `arenas/seed_0007/truth/setup_plan.png`.
 - **`GZ_PARTITION`:** Gazebo finds every other Gazebo on the same network. This name keeps yours private. Set it before starting `gz`, and put it in `~/.bashrc` inside the container.
 - **`info [schematic] ...` or `info [empty] ...` lines during `colcon build` are normal.** They are rulebook deviations of the fixed example layouts, not errors.
+- **Installed worlds** (swap the name in the `gz sim` path):
+  - `schematic`: the organiser's example.
+  - `empty`
+  - `seed_0001` to `seed_0005`: random fields.
+  - Stress tests that target known failure modes: `gate` (a gap barely wide enough to turn through), `column_pinch` (the route passes the column next to a crater), `crater_field` (shallow craters on the route), `busy_dig` (a crowded dig-to-berm trip) and `start_trap` (the rover must turn before it can leave the start zone).
 
 All geometry, and every assumption the rulebook leaves open, lives in `src/cac_sim/config/arena.yaml`. Details, flags, what the sensors can see, and the ground-truth rule are in [`src/cac_sim/README.md`](src/cac_sim/README.md).
 
