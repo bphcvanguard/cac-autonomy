@@ -186,9 +186,9 @@ appearance:
   wall_lightness: [0.92, 1.08]      # ASSUMED: x on wall colour; beige .. off-white .. light grey
 
 our_rover:
-  # Our rover, for the test harness (spawn size, clearance and contact checks). NOT used by the
-  # randomiser (see randomiser.robot_footprint). APPROXIMATE: ~0.6 x 0.3 m. Update with the measured
-  # stowed L x W x H and mass before relying on it.
-  footprint: [0.60, 0.30]           # L x W, metres, TO BE MEASURED
-  height: null                      # metres, TO BE MEASURED
+  # Our rover (the old Vanguard rocker-bogie), for the test harness: spawn size, clearance and
+  # contact checks. NOT used by the randomiser (see randomiser.robot_footprint). Measured from the
+  # CAD (01Design_25.step) standing on flat ground; URDF in cac_description.
+  footprint: [1.38, 0.67]           # L x W, metres (wheelbase 1.16, track 0.57)
+  height: 0.92                      # metres standing (Unstop/schematic stowed limit is 0.75!)
   mass_kg: null                     # TO BE MEASURED (BCP-mass divides by it)
