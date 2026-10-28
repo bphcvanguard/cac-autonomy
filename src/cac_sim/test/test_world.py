@@ -339,12 +339,13 @@ GOLDEN_SDF_SHA256 = {
     ('random', '3'): 'bdd551f87c4fa6cf15f8f79ba31edac8865e8343b27ee496bee0b62ebea350fa',
     ('schematic', None): '1e5e39453a97d0ea7ec360ffd839c427dfa58fbc21bb4ce8c50e2c992429aab2',
 }
+# 2026-10-28 later: crater patches subdivided 3 x 3 (review: small bowls were ~2 cm short).
 # --sand-collision tiles = the DEFAULT since 2026-10-28: only the terrain <collision> elements
 # differ from mesh mode; the visual mesh, textures and truth are byte-identical
 # (test_tiles_change_only_...).
 GOLDEN_SDF_SHA256_TILES = {
-    ('random', '3'): '4cc7b7a172e97f9402d8b62fedecc4b7623d31bf391db91b96727667b6b77077',
-    ('schematic', None): '7ae982d5bb52ab5aaabb2bafd16f5cd121258c3e4206bc5d96a461345655e09e',
+    ('random', '3'): 'f797ec15ca13cbcaa0f106a70e79459b5173452e954fe476ac01902dcff2ee52',
+    ('schematic', None): '82e83162d6d4cc95784ec735b306401eac833ce7de75a9d64e35f8303b029be8',
 }
 
 
@@ -581,3 +582,18 @@ def test_setup_sheet_deterministic_and_markers(tmp_path):
     assert 'ArUco markers' in p1.read_text()
     p3 = layout_mod.setup_sheet(cfg, lay, tmp_path / '3')
     assert 'ArUco markers' not in p3.read_text()
+
+
+@pytest.mark.parametrize('name', ['schematic', 'crater_field', 'column_pinch'])
+def test_crater_patch_keeps_bowl_depth(name):
+    """The collision patch reaches each crater's floor (within 3 mm) and its border is flat."""
+    from cac_sim_gen import geometry
+    cfg = config.load_config()
+    lay = config.load_layout(name)
+    _, patch = geometry.sand_collision_tiles(cfg, lay, lay.get('seed'))
+    v = patch.vertices
+    for i in range(len(lay['craters'])):
+        p = geometry.crater_params(cfg, lay, i, lay.get('seed'))
+        near = ((v[:, 0] - p['position'][0]) ** 2 + (v[:, 1] - p['position'][1]) ** 2
+                < (p['diameter'] / 2) ** 2)
+        assert v[near, 2].min() <= -p['depth_eff'] + 0.003

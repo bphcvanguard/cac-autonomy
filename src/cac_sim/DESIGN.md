@@ -84,20 +84,21 @@ exit code 2; no world is written. Truth is generated only with `--out`: it is no
   Stream ids (all distinct; `test_rng_streams_distinct` checks seeds 0..20): layout obstacles `[s, 2]`,
   start pose `[s, 3]`, boulder yaw in `world.py` `[s, 7]`, appearance variation `[appearance_seed, 70]` (`appearance.py`); geometry: textures 20-26 (sand etc.), crater
   rim `[s, 21, i]`, crater depth `[s, 22, i]`, rock shape `[s, 30, i]`, rock texture variants `[s, 50+k]`.
-- Sand collision (`sand.collision` in `arena.yaml`, default `mesh`; CLI `--sand-collision`). gz-sim 8 (dartsim) builds a
+- Sand collision (`sand.collision` in `arena.yaml`, default `tiles`; CLI `--sand-collision`). gz-sim 8 (dartsim) builds a
   mesh collision with `AttachMeshShape` and drops its `<surface>`, so friction only acts on
   primitive shapes. `tiles`: on the 8 cm collision grid, every cell touching the square of half-size
   `crater_outer_radius + 5 cm` around a crater is a crater-patch cell; all other cells are flat and
   are merged greedily (largest rectangle first) into static boxes, top at z = 0, bottom at
   `-sand_depth` (8-27 boxes on the shipped and random layouts). All boxes are collisions of the one
   `terrain` link and carry `terrain.friction` as mu = mu2. The patch cells form one mesh
-  (`terrain_collision.obj`, same grid and diagonals as the old collision mesh) with the crater
+  (`terrain_collision.obj`, the 8 cm cells subdivided 3 x 3 so small bowls keep their depth to
+  within 2.5 mm; at least one flat 8 cm cell inside every border) with the crater
   profile but WITHOUT the tilled relief, so every patch-border vertex is exactly z = 0 and meets the
   box tops: no step or gap a wheel can catch (`geometry.sand_collision_tiles`). Friction is inert on
   the patches (DART default mu 1.0). The tilled relief (+/- 1.2 cm) is therefore visual only. `mesh`:
   one whole-arena collision mesh, relief included, friction inert everywhere. The visual
-  mesh, textures, layout and truth are byte-identical in both modes. `mesh` stays the default
-  because `tiles` costs physics time (a cylinder wheel gets 2 contact points on a box, 1 on the
+  mesh, textures, layout and truth are byte-identical in both modes. `tiles` is the default
+  even though it costs physics time (a cylinder wheel gets 2 contact points on a box, 1 on the
   mesh): headless uncapped RTF -8 % on the schematic, -20 % on a dense seed; both hold RTF 1.0 on 2
   cores.
 - Budgets so CPU-only laptops stay real-time: terrain visual <= 80k triangles, collision <= 20k,

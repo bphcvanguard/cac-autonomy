@@ -343,6 +343,7 @@ def build_terrain(cfg, layout, seed, res=0.05, fine_res=0.015, max_triangles=800
 # ---------------------------------------------------------------------------------------------
 
 PATCH_MARGIN = 0.05   # m added to crater_outer_radius() for the square crater patch
+PATCH_SUB = 3            # patch cells 3 x 3 (2.7 cm): crater floors within 2.5 mm, <= 20k tris
 
 
 def _max_rect(mask):
@@ -381,7 +382,7 @@ def _greedy_rects(mask):
     return out
 
 
-def sand_collision_tiles(cfg, layout, seed, res=0.08, margin=PATCH_MARGIN):
+def sand_collision_tiles(cfg, layout, seed, res=0.08, margin=PATCH_MARGIN, sub=PATCH_SUB):
     """Split the sand collision into flat boxes and crater mesh patches, on one `res` grid.
 
     The grid is the same as build_terrain(res, res) (the old whole-arena collision mesh). A cell
@@ -400,6 +401,9 @@ def sand_collision_tiles(cfg, layout, seed, res=0.08, margin=PATCH_MARGIN):
     xs = np.arange(nx + 1) * dx
     ys = np.arange(ny + 1) * dy
     xs[-1], ys[-1] = W, H
+    # At least one whole coarse cell of flat sand inside every patch border, so the bowl's flank
+    # never meets the border cell (no slope kink at the seam).
+    margin = max(margin, res)
     patch_mask = np.zeros((nx, ny), dtype=bool)
     for i in range(len(layout.get('craters') or [])):
         p = crater_params(cfg, layout, i, seed)
@@ -416,14 +420,23 @@ def sand_collision_tiles(cfg, layout, seed, res=0.08, margin=PATCH_MARGIN):
 
     def vid(a, b):
         return keys.setdefault((a, b), len(keys))
+    # Patch cells are subdivided `sub` x `sub` on a fine lattice shared between neighbouring
+    # patch cells, so small bowls keep their depth (an 8 cm grid cut them up to ~2 cm short).
     for i, j in zip(*np.nonzero(patch_mask)):
-        v00, v10, v01, v11 = vid(i, j), vid(i + 1, j), vid(i, j + 1), vid(i + 1, j + 1)
-        if (i + j) % 2:          # same diagonals as build_terrain's plain cells
-            tris += [(v00, v10, v11), (v00, v11, v01)]
-        else:
-            tris += [(v00, v10, v01), (v10, v11, v01)]
+        for a in range(sub):
+            for b in range(sub):
+                fi, fj = i * sub + a, j * sub + b
+                v00, v10 = vid(fi, fj), vid(fi + 1, fj)
+                v01, v11 = vid(fi, fj + 1), vid(fi + 1, fj + 1)
+                if (fi + fj) % 2:
+                    tris += [(v00, v10, v11), (v00, v11, v01)]
+                else:
+                    tris += [(v00, v10, v01), (v10, v11, v01)]
     lat = np.array(list(keys), dtype=np.int64)
-    x, y = xs[lat[:, 0]], ys[lat[:, 1]]
+    xf = np.arange(nx * sub + 1) * (dx / sub)
+    yf = np.arange(ny * sub + 1) * (dy / sub)
+    xf[-1], yf[-1] = W, H
+    x, y = xf[lat[:, 0]], yf[lat[:, 1]]
     flat_cfg = {**cfg, 'sand': {**cfg['sand'], 'tilled_roughness': 0.0}}
     z = surface_height(flat_cfg, layout, x, y, seed)
     v = np.column_stack([x, y, z])

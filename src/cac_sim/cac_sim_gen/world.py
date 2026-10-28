@@ -184,8 +184,8 @@ def _sand_surface(mu):
 
 
 def sand_collision_mode(cfg):
-    """`sand.collision` from arena.yaml: 'mesh' (default) or 'tiles'. Raises ValueError."""
-    mode = cfg['sand'].get('collision', 'mesh')
+    """`sand.collision` from arena.yaml: 'tiles' (default) or 'mesh'. Raises ValueError."""
+    mode = cfg['sand'].get('collision', 'tiles')
     if mode not in ('tiles', 'mesh'):
         raise ValueError(f"sand.collision must be 'tiles' or 'mesh', got {mode!r}")
     return mode
