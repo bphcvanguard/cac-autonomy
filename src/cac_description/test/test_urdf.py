@@ -122,6 +122,6 @@ def test_sim_variant_wheel_friction():
 
 @pytest.mark.parametrize('path', [URDF, SIM])
 def test_material_names_unique(path):
-    """urdfdom (and so gz sdf / RViz) rejects a URDF that defines one material name twice."""
+    """Reject duplicate material names: urdfdom (gz sdf, RViz) refuses such a URDF."""
     names = [m.get('name') for m in ET.parse(path).getroot().findall('material')]
     assert len(names) == len(set(names))

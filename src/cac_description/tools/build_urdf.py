@@ -430,7 +430,8 @@ def main():
                 f'{pub(lk)}.stl"/></geometry>')
         if lk in vis_parts:
             for mat, stem in vis_parts[lk]:
-                pstem = pub(stem.split('__')[0]) + ('__' + stem.split('__')[1] if '__' in stem else '')
+                base, _, mat_sfx = stem.partition('__')
+                pstem = pub(base) + ('__' + mat_sfx if mat_sfx else '')
                 w('    <visual><geometry><mesh filename="package://cac_description/meshes/'
                   f'{pstem}.stl"/></geometry><material name="mat_{mat}"/></visual>')
         else:
