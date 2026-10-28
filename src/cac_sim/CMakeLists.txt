@@ -32,6 +32,10 @@ add_custom_command(
   COMMAND ${_gen} --layout busy_dig --out ${_worlds_dir}
   COMMAND ${_gen} --layout start_trap --out ${_worlds_dir}
   COMMAND ${_gen} --layout random --seed 1 --count ${_n_random} --out ${_worlds_dir}
+  # Delete truth/ from the generated worlds. The install PATTERN "truth" EXCLUDE below only
+  # works for copied installs: `colcon build --symlink-install` (what dev.sh uses) links the
+  # whole worlds tree, and truth/ would leak into share/ where any node can read it.
+  COMMAND python3 -c "import glob, shutil; [shutil.rmtree(d) for d in glob.glob('${_worlds_dir}/*/truth')]"
   COMMAND ${CMAKE_COMMAND} -E touch ${_worlds_stamp}
   DEPENDS ${_gen_deps} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_arena
   COMMENT "cac_sim: generating default arena worlds"
