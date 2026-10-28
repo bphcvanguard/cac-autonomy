@@ -207,11 +207,12 @@ The bracket is regenerated separately: `$FC tools/d455_bracket.py cad` writes `c
 
 ## Tests
 
-```bash
-cd /workspace && PYTHONPATH= python3 -m pytest -q src/cac_description/test   # or: colcon test --packages-select cac_description
-```
+Inside the container (`./scripts/dev.sh sh`), from `/workspace`:
 
-`PYTHONPATH=` keeps ROS's Python packages from breaking pytest. If `ament_flake8` is not installed, add `--ignore=src/cac_description/test/test_flake8.py`.
+```bash
+colcon build --symlink-install --packages-select cac_description
+colcon test --packages-select cac_description && colcon test-result --verbose
+```
 
 ## Open items
 
