@@ -113,10 +113,8 @@ def test_sim_variant_only_locks_the_differential():
 
 
 def test_sim_variant_wheel_friction():
+    """Wheel friction tags, if any, cover every wheel (none = isotropic, the sand decides)."""
     sim = ET.parse(SIM).getroot()
     g = {e.get('reference'): e for e in sim.findall('gazebo')}
     wheels = [ln.get('name') for ln in sim.findall('link') if ln.get('name').endswith('_wheel')]
-    assert sorted(g) == sorted(wheels)
-    for w in wheels:
-        assert float(g[w].findtext('mu1')) < 0.3 < float(g[w].findtext('mu2'))
-        assert g[w].findtext('fdir1').split() == ['0', '0', '1']
+    assert not g or sorted(g) == sorted(wheels)

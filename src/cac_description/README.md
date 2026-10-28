@@ -49,27 +49,30 @@ Update `MATERIAL_DENSITY` when the real tube size, PLA infill, wheel material an
 | File | Use it for | Differential | Wheels |
 |---|---|---|---|
 | `urdf/rover.urdf` | RViz, TF, and suspension studies on Bullet | real: mimic joints | no friction tags |
-| `urdf/rover_sim.urdf` | **Driving in Gazebo** (the `cac_sim` arena runs on DART) | rockers and diff bar **locked**; bogies still move | lateral 0.2 / rolling 1.0, `fdir1` = axle |
+| `urdf/rover_sim.urdf` | **Driving in Gazebo** (the `cac_sim` arena runs on DART) | rockers and diff bar **locked**; bogies still move | no tags: the sand's friction sets the grip |
 
 Both files have the same links, frames, meshes, inertias and collisions; a test checks this.
 They are generated together.
 
 **Why two files.** Gazebo Harmonic has no physics engine that does both things this rover needs (all measured):
 
-- **DART ignores mimic joints.** The full rover's free differential lets the body tip over: 34° backwards on flat ground. With the rockers locked (`rover_sim.urdf`), DART drives well:
-  - turn in place: 360.4° of 360°, and odometry matches exactly at the real 0.570 m track;
-  - 1 m arc: 1.036 m radius;
-  - 11 cm crater: crosses 6 out of 6 times;
-  - off-centre boulder: climbs it with under 10° of roll.
-- **Bullet-Featherstone enforces the mimics,** so the real differential works. Checked with a 10 cm block under the left front wheel: rockers −0.0299 / +0.0299 rad, diff bar 0.0123 rad (= 0.412 × 0.0299). **But it cannot skid-steer:**
-  - turn in place: 0.2° of 360°;
-  - even with spinning friction off, only 53–93°, because Bullet-Featherstone fixes friction directions to the world axes;
-  - it got stuck in an 11 cm crater.
+- **DART ignores mimic joints.** The full rover's free differential lets the body tip over: 34° backwards on flat ground (old CAD). With the rockers locked (`rover_sim.urdf`), DART drives well. Measured with the new-joints rover in the arena, sand friction 0.5:
+
+  | Test | Result |
+  |---|---|
+  | Turn in place, 360° commanded | 360.3–360.5°, with any wheel friction; odometry exact at the 0.647 m track |
+  | Arc, 180° commanded | 180.6° |
+  | Straight, 4 m | 4.001 m |
+  | 11 cm crater | crosses; max roll 2.4° |
+  | 15 cm steep boulder, head-on | stalls (avoid rocks anyway: touching one is a penalty) |
+- **Bullet-Featherstone enforces the mimics,** so the real differential works. Checked with a 10 cm block under one wheel: rockers ∓0.0299 rad, diff bar 0.0123 rad. **But it cannot skid-steer:**
+  - turn in place: 0.2° of 360° (old CAD);
+  - Bullet-Featherstone fixes friction directions to the world axes.
 
   Use it only to study the suspension.
 - **DART cannot model the real linkage as a closed loop either** (gz-physics drops loop joints).
 
-**Wheel friction must be anisotropic.** The wheels sit +0.87 to −0.29 m fore-aft on a 0.57 m track. With equal friction in every direction, the rover cannot turn in place on either engine. Lateral friction above about 0.3 turned 0°; 0.2 / 1.0 turns cleanly. This is ordinary friction physics, so the real rover on real sand has the same problem in a milder form.
+**Geometry matters for turning.** The old CAD (wheelbase 1.16 m on a 0.57 m track) could only turn in place with anisotropic wheels (sideways 0.2, rolling 1.0, `fdir1` = axle). The new joints make the rover squarer (0.89 m on 0.65 m), and it turns with ordinary friction. If a design change makes it long and narrow again, set `SIM_WHEEL_FRICTION` in `tools/build_urdf.py`.
 
 To run the full model on Bullet, start Gazebo with `--physics-engine gz-physics-bullet-featherstone-plugin`, or name the plugin in the world's Physics system. `<physics type>` alone still loads DART.
 
