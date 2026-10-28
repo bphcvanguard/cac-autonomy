@@ -132,7 +132,21 @@ stays quick. After changing the randomiser or the limits in `arena.yaml`, run th
 ## What the sensors see (measured in this sim)
 
 Craters are shallow bowls: 3-12 cm deep for 30-50 cm wide (see `arena.yaml` for why). That makes them
-**much harder to see than boulders**. Measured with a static sensor 0.5 m above the sand:
+**much harder to see than boulders**.
+
+**The team's rover with its D455** is mounted 0.68 m up and pitched 22.5° down (`cac_description` README, section "Camera"). It was measured in this arena, counting a crater as detected at ≥ 10 depth points below −3 cm, with 7 mm depth noise:
+
+| Crater width × depth | Detected from |
+|---|---|
+| 30 cm × 4–6 cm | ~2.0 m |
+| 40 cm × 6 cm | 2.5 m (not 3.0) |
+| 50 cm × 6 cm | 3.0 m |
+| 50 cm × ~10 cm | ≥ 3.5 m |
+
+- A 30 × 15 cm boulder is seen out to 5 m.
+- Flat sand gives no false points below −3 cm.
+
+**Earlier generic study** (a static sensor 0.5 m above the sand, before the rover and camera were chosen):
 
 | Crater | Depth camera (640x480, 87 deg, pitched 20 deg) | 16-beam LiDAR (tilted 15 deg) |
 |---|---|---|
