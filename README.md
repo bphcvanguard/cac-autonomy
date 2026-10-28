@@ -4,7 +4,7 @@ The autonomy software for **Project Vanguard (BITS Pilani, Hyderabad)** in the *
 
 **Stack:** Ubuntu 24.04 · ROS 2 Jazzy · Gazebo Harmonic (`ros_gz`) · Nav2 · robot_localization · ros2_control · Python 3.12
 
-> This repository is a **starting skeleton**. The packages are intentionally empty. Each pod builds its own package. What's fixed is *where* code lives and *how* we work together.
+> This repository is a **starting skeleton**. Two packages are ready to use: `cac_sim` (the competition arena in Gazebo) and `cac_description` (our rover's URDF). The others are intentionally empty: each pod builds its own. What's fixed is *where* code lives and *how* we work together.
 
 ---
 
@@ -191,6 +191,8 @@ ros2 run cac_sim generate_arena --layout random --seed 7 --setup-sheet --out /wo
   - `empty`
   - `seed_0001` to `seed_0005`: random fields.
   - Stress tests that target known failure modes: `gate` (a gap barely wide enough to turn through), `column_pinch` (the route passes the column next to a crater), `crater_field` (shallow craters on the route), `busy_dig` (a crowded dig-to-berm trip) and `start_trap` (the rover must turn before it can leave the start zone).
+
+**Our rover in the arena** (needs `cac_description`): add `--robot $(ros2 pkg prefix cac_description)/share/cac_description/urdf/rover_sim.urdf` to `generate_arena`. The rover appears in the start zone. See [`src/cac_description/README.md`](src/cac_description/README.md).
 
 All geometry, and every assumption the rulebook leaves open, lives in `src/cac_sim/config/arena.yaml`. Details, flags, what the sensors can see, and the ground-truth rule are in [`src/cac_sim/README.md`](src/cac_sim/README.md).
 
