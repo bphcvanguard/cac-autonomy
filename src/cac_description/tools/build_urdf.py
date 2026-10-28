@@ -149,6 +149,15 @@ MATERIAL_DENSITY = {
 CAMERA = {}     # optional camera + mount from the model file (see camera_links)
 
 
+def camera_mass():
+    """Mass of the camera plus its printed mount (kg); 0 when the model has no camera."""
+    if not CAMERA:
+        return 0.0
+    tris = read_stl(os.path.join(CAMERA['_model_dir'], CAMERA['mount_stl'])) * MM
+    vol = mass_props(tris)[0]
+    return vol * MATERIAL_DENSITY[CAMERA.get('mount_material', 'pla')] + CAMERA['mass']
+
+
 def camera_links(out_pkg, fmt_):
     """URDF lines for the camera mount (printed bracket) and the camera with optical frames.
 
@@ -385,7 +394,8 @@ def main():
     ap.add_argument('out_pkg')
     ap.add_argument('--front', choices=('-x', '+x'), default='-x',
                     help='which CAD end is the front (default -x: wheel/rod 1 end)')
-    ap.add_argument('--total-mass', type=float, default=None, help='scale all masses to this (kg)')
+    ap.add_argument('--total-mass', type=float, default=None,
+                    help='weighed rover mass (kg), camera included')
     ap.add_argument('--model', default=None,
                     help="JSON with pivots (mm, this tool's CAD convention) and material "
                          'densities for a CAD file other than 01Design_25')
@@ -457,7 +467,8 @@ def main():
             I_tot += m * I_unit + m * (np.dot(d, d) * np.eye(3) - np.outer(d, d))
         props[lk] = [m_tot, to_base(com_link - frames[lk]), flip @ I_tot @ flip.T]
     if a.total_mass:
-        k = a.total_mass / sum(p[0] for p in props.values())
+        # the weighed rover includes the camera and its mount, which are added after this
+        k = (a.total_mass - camera_mass()) / sum(p[0] for p in props.values())
         for p in props.values():
             p[0] *= k
             p[2] = p[2] * k
@@ -629,7 +640,8 @@ def main():
                 os.replace(os.path.join(mesh_dir, f'{stem}.stl.tmp'),
                            os.path.join(mesh_dir, f'{pub(lk)}__{mat}.stl'))
     summary = {
-        'front': a.front, 'total_mass_kg': round(sum(p[0] for p in props.values()), 3),
+        'front': a.front,
+        'total_mass_kg': round(sum(p[0] for p in props.values()) + camera_mass(), 3),
         'masses_kg': {pub(k): round(props[k][0], 3) for k in order},
         'bogie_stance_deg': {k: round(math.degrees(v), 3) for k, v in beta.items()},
         'stance_pitch_deg': round(math.degrees(stance_pitch_robot), 3),

@@ -1,7 +1,7 @@
 # D455 fixed mount on the CAC 2027 rover: design study
 
 Scratch study, 28 Oct 2026. Rover: `cac_description` `rover.urdf` visual meshes at zero pose (standing on flat ground). Frames: REP-103, `base_footprint` with ground at z=0, front = +x.
-Code: `common.py` (FK + meshes), `rt.py` (numpy Moller-Trumbore), `model.py` (metrics), `sweep.py`, `robust.py`, `figs.py`, `pose_json.py`. Data: `sweep.json` (375 poses).
+Study code and data are **not in the repo** (a one-off scratch study; ask Krithin). Code: `common.py` (FK + meshes), `rt.py` (numpy Moller-Trumbore), `model.py` (metrics), `sweep.py`, `robust.py`, `figs.py`, `pose_json.py`. Data: `sweep.json` (375 poses).
 
 ## Recommendation
 

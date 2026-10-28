@@ -17,18 +17,19 @@ ros2 launch cac_description display.launch.py      # RViz: robot model + TF (nee
 | `base_link` | Body (frame box). Origin is on the rocker-pivot axis, midway between the two pivots | fixed to `base_footprint` |
 | `left_rocker`, `right_rocker` | Rocker arms. Each carries its **rear** wheel and its bogie | revolute about y at the body pivot |
 | `left_bogie`, `right_bogie` | Bogies. Each carries the **front** and **middle** wheels | revolute about y at the bogie pin |
-| `diff_bar` | Differential bar on top of the body | revolute about z, mimics the right rocker × 0.412 |
+| `diff_bar` | Differential bar on top of the body | revolute about z, mimics the right rocker × 0.4118 |
 | `*_wheel` (6) | Wheels: 220 mm diameter, 60 mm wide | continuous about y |
 
-- **Differential:** `left_rocker_joint` mimics `right_rocker_joint` × −1. Relative to the body, the rockers always turn by equal and opposite amounts, as the real differential bar forces them to. The bar's ratio, 0.412, comes from the linkage geometry: the ball-joint height above the rocker pivot (126 mm) divided by the bar's half-length (305.5 mm).
+- **Differential:** `left_rocker_joint` mimics `right_rocker_joint` × −1. Relative to the body, the rockers always turn by equal and opposite amounts, as the real differential bar forces them to. The bar's ratio, 0.4118, comes from the linkage geometry: the ball-joint height above the rocker pivot (126 mm) divided by the bar's half-length (306 mm). `urdf/build_summary.json` records it as `diff_ratio`.
 - **Zero pose = standing on flat ground:**
   - The rockers sit at their CAD angle, where the differential is neutral.
   - Each bogie is rotated -0.75° from the CAD until its wheels line up.
   - All six wheels then touch the ground (`test_urdf.py` checks this to within 2 mm).
-  - The body sits 0.5° from level on flat ground: essentially level. The old CAD gave 6°; the new joints fixed it.
-- **Size standing:** 1.11 m long × 0.7505 m wide × 0.68 m tall. The rocker pivots are 0.49 m above the ground. The wheelbase is 0.89 m and the track 0.65 m.
+  - The body sits 0.5° **nose-up** on flat ground (`base_footprint_joint` pitch −0.0089 rad): essentially level. The old CAD gave 6°; the new joints fixed it.
+  - `base_link` is 0.4865 m above the ground.
+- **Size standing:** 1.11 m long × 0.7505 m wide × 0.68 m tall without the camera (0.698 m to the top of the D455). The rocker pivots are 0.49 m above the ground. The wheelbase is 0.89 m and the track 0.65 m.
   - **The width is 0.5 mm over the rules' 0.75 m.** This comes from the mirrored left side, so measure the real rover once both sides have the new joints.
-- **Front:** the CAD's −x end (rod/wheel "1" end, the bogies lead). Rebuild with `--front=+x` to flip it.
+- **Front = +x in the URDF.** That is the CAD's −x end (the rod/wheel "1" end, where the bogies lead), chosen with `--front=-x` at build time. **Not yet confirmed with the team**; to make the other end the front, rebuild with `--front=+x`.
 
 ## Looks
 
@@ -45,13 +46,16 @@ The colours come from `MAT_COLOUR` in `tools/build_urdf.py`. Each link still has
 
 ## Putting the rover in the arena
 
+Both packages must be built and sourced first (inside `./scripts/dev.sh sh`):
+
 ```bash
+colcon build --symlink-install --packages-select cac_description cac_sim && source install/setup.bash
 ros2 run cac_sim generate_arena --layout schematic \
   --robot $(ros2 pkg prefix cac_description)/share/cac_description/urdf/rover_sim.urdf --out /workspace/arenas
 gz sim -r /workspace/arenas/schematic/arena.sdf
 ```
 
-The rover is placed at the layout's start pose in the start zone. Its meshes are copied into the world folder.
+The rover is placed at the layout's start pose in the start zone. Its meshes are copied into the world folder. `/workspace/arenas` is any writable folder; `/workspace` is the repo inside the dev container.
 
 ## Camera: RealSense D455 on a printed bracket
 
@@ -59,7 +63,8 @@ The rover is placed at the layout's start pose in the start zone. Its meshes are
 |---|---|
 | ![rover with camera](cad/camera_on_rover.png) | ![bracket close-up](cad/bracket_close.png) |
 
-**Pose.** The camera's centre is at x 0.35, y 0, z 0.68 m (in `base_footprint`), pitched 22.5° down.
+**Pose.** The camera's centre is at x 0.35, y 0, z 0.68 m above the ground, pitched **22.5° down from horizontal**.
+In the URDF that is `camera_joint` (parent `camera_mount`, which sits at the `base_link` origin): xyz (0.3517, 0, 0.1903) m, pitch 0.40158 rad = 23.0°, because `base_link` itself is 0.5° nose-up. The numbers live in `cad/model_keshav.json` (`camera`).
 The top of the camera is 0.698 m above the ground, so it is inside the 0.75 m stowed height.
 The pose comes from a study (`cad/camera_mount_study.md`, figures `cad/camera_fig*.png`). It ray-cast the D455's field of view against this rover's real geometry over a sweep of positions and pitches. Results at this pose:
 
@@ -88,7 +93,7 @@ Maximum detection distance (crater straight ahead, distance from the camera's gr
 
 Real D455 noise grows with range and is worse on bright sand than this constant 7 mm, so expect these distances to be a little shorter on the real rover.
 
-**Bracket.** `cad/d455_bracket.step` and `.stl` are one printed part, about 161 cm³, in `base_link` coordinates. Its parametric FreeCAD source is `tools/d455_bracket.py`. A mechanical review checked fit, access, clearance, printability and strength (FreeCAD and mesh sweeps):
+**Bracket.** `cad/d455_bracket.step` and `.stl` are one printed part, about 161 cm³ (0.12 kg in PETG/PLA at 60 % fill). They are in **millimetres**, in the `base_link` frame, so they sit exactly where they go on the rover (camera centre at (351.7, 0, 190.3) mm). `build_urdf.py` converts the STL to metres as `meshes/camera_mount.stl`. Its parametric FreeCAD source is `tools/d455_bracket.py`. A mechanical review checked fit, access, clearance, printability and strength (FreeCAD and mesh sweeps):
 
 - **Saddle:** sits over the body's front top cross member (30 × 30 mm), with 0.3 mm slide-on clearance fore-aft. It is clamped by **2 × M5 bolts** that run fore-aft just under the member, so they also stop it rotating.
 - **Web and plate:** 40 mm wide, so it prints with **no supports**. The plate is tilted 23° and has a back lip so the camera can't turn.
@@ -129,9 +134,9 @@ Real D455 noise grows with range and is worse on bright sand than this constant 
 | Steel | pivot screws and pins | 7850 kg/m³ |
 | ASSUMED | drive motors (about 0.6 kg each), wheels (1.0 kg each), body (4.6 kg) | see `MATERIAL_DENSITY` in `tools/build_urdf.py` |
 
-The total comes out at **20.8 kg**.
+The total comes out at **21.3 kg**: 20.8 kg of CAD parts plus the D455 (0.39 kg) and its bracket (0.12 kg).
 
-Once the rover has been weighed, rebuild with `--total-mass <KG>`. That keeps each part's share of the mass and scales every inertia to match.
+Once the rover has been weighed **with the camera on**, rebuild with `--total-mass <KG>`. The camera and bracket keep their own masses; the CAD parts keep their shares and are scaled (inertias too) so the whole URDF adds up to `<KG>`.
 Update `MATERIAL_DENSITY` when the real tube size, PLA infill, wheel material and motor weights are known.
 
 ## Two URDFs: which one to use
@@ -176,25 +181,42 @@ To run the full model on Bullet, start Gazebo with `--physics-engine gz-physics-
 
 ## Regenerating from the CAD
 
-The pipeline needs FreeCAD (flatpak `org.freecad.FreeCAD`) for the first two steps only:
-
-1. `tools/inspect_step.py`: run in FreeCADCmd. Lists every solid part with its placement, size and volume.
-2. `tools/export_parts.py`: run in FreeCADCmd. Writes one STL per part, in metres.
-3. `tools/prep_keshav.py`: rotates this file's frame into the generator's convention and drops duplicates and hardware under 1 cm³. It also assigns each part a link (from a name table, with the side taken from position) and a material.
-4. `tools/build_urdf.py --model cad/model_keshav.json --mirror-from left --front=-x`: mirrors the updated side and rotates the bogies into stance. It then builds each link's mesh, mass, centre of mass and inertia, and writes the oriented-box collisions, the joints, `rover.urdf`, `rover_sim.urdf` and `urdf/build_summary.json`.
-5. `tools/fk_check.py`: renders the zero pose and prints how far each wheel's bottom is from the ground.
-
-Example run for step 1:
+The STEP file is **not in the repo** (5 MB, owned by the mechanical team): get `NEW JOINTS KESHAV ASSEMBLY.step` from them.
+Steps 1–2 need FreeCAD (flatpak `org.freecad.FreeCAD`); steps 3–5 need Python 3 with numpy. Run from `src/cac_description`.
 
 ```bash
-flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD tools/inspect_step.py \
-  "NEW JOINTS KESHAV ASSEMBLY.step" cad/parts_keshav_raw.json
+STEP="/path/to/NEW JOINTS KESHAV ASSEMBLY.step"; W=/tmp/cad_work      # scratch folder
+FC="flatpak run --command=FreeCADCmd --filesystem=home org.freecad.FreeCAD"
+# 1. list every solid part (placement, size, volume)
+$FC tools/inspect_step.py "$STEP" cad/parts_keshav_raw.json
+# 2. one STL per part, in metres, plus index.json
+$FC tools/export_parts.py "$STEP" $W/parts_raw
+# 3. rotate into the generator's frame, drop duplicates and hardware < 1 cm^3, assign links + materials
+python3 tools/prep_keshav.py cad/parts_keshav_raw.json $W/parts_raw $W/prep
+# 4. build both URDFs, meshes and urdf/build_summary.json  (OVERWRITES urdf/ and meshes/)
+python3 tools/build_urdf.py $W/prep/parts.json $W/prep/parts_m . \
+  --model cad/model_keshav.json --mirror-from left --front=-x \
+  --source-name "NEW JOINTS KESHAV ASSEMBLY.step"      # add --total-mass <KG> once weighed
+# 5. render the zero pose and print each wheel's height above the ground
+python3 tools/fk_check.py urdf/rover.urdf . $W/zero_pose.png
 ```
+
+To try a change without touching the committed files, copy the package to a scratch folder and pass that folder as the third argument of step 4. Then run the tests (below).
+
+The bracket is regenerated separately: `$FC tools/d455_bracket.py cad` writes `cad/d455_bracket.step` and `.stl`; rerun step 4 afterwards.
+
+## Tests
+
+```bash
+cd /workspace && PYTHONPATH= python3 -m pytest -q src/cac_description/test   # or: colcon test --packages-select cac_description
+```
+
+`PYTHONPATH=` keeps ROS's Python packages from breaking pytest. If `ament_flake8` is not installed, add `--ignore=src/cac_description/test/test_flake8.py`.
 
 ## Open items
 
 - **Total mass:** to be measured. Rebuild with `--total-mass`.
-- **Real stance pitch:** the model sits 0.5° nose-down on flat ground. Check that against the real rover.
-- **Sensors:** none are mounted yet. Perception adds the camera/LiDAR links and their extrinsics here.
-- **Envelope:** 0.68 m tall standing, so it is under the 0.75 m stowed height. It is 0.7505 m wide with the mirrored side, which is 0.5 mm over 0.75 m. Measure the real rover.
+- **Real stance pitch:** the model sits 0.5° nose-up on flat ground. Check that against the real rover.
+- **Sensors:** only the D455 is mounted. Perception adds any LiDAR or other sensor links here, through the `camera`-style block in `cad/model_keshav.json` or by hand in `build_urdf.py`.
+- **Envelope:** 0.68 m tall standing (0.698 m with the camera), so it is under the 0.75 m stowed height. It is 0.7505 m wide with the mirrored side, which is 0.5 mm over 0.75 m. Measure the real rover.
 - **Left side:** it is a mirror of the right until the CAD's left side has the new joints too. Once it has, rebuild without `--mirror-from`.

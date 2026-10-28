@@ -41,7 +41,7 @@
     766.0
   ],
   "camera": {
-    "_note": "Intel RealSense D455, fixed mount on the body's front top cross member (30 x 30 mm). Pose from the mount study (cammount/REPORT.md): best balance of ground coverage ahead (blind 0.24 m past the front wheels, 0% self-occlusion) and ArUco markers in view out to 8 m (11 deg margin). Camera body size and mass are from memory, NOT checked against Intel's datasheet: verify. Optical frames sit at the body centre; the real depth origin is the left imager (about +0.0475 m y, UNVERIFIED) - use realsense2_description for exact extrinsics on the real robot.",
+    "_note": "Intel RealSense D455, fixed mount on the body's front top cross member (30 x 30 mm). Pose from the mount study (cad/camera_mount_study.md): best balance of ground coverage ahead (blind 0.24 m past the front wheels, 0% self-occlusion) and ArUco markers in view out to 8 m (11 deg margin). Camera body size and mass are from memory, NOT checked against Intel's datasheet: verify. Colour optical frame at the body centre; depth optical frame at the left imager (depth_offset +0.0475 m y, from realsense-ros, UNVERIFIED) - use realsense2_description for exact extrinsics on the real robot.",
     "name": "camera",
     "mount_stl": "d455_bracket.stl",
     "mount_material": "pla",

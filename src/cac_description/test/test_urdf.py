@@ -214,6 +214,15 @@ def test_readme_states_build_summary_mass():
     assert f'{total:.1f} kg' in (PKG / 'README.md').read_text()
 
 
+@pytest.mark.parametrize('path', [URDF, SIM])
+def test_build_summary_mass_is_whole_urdf(path):
+    """The summary (and --total-mass) count every link, camera and bracket included."""
+    import json
+    total = json.loads((PKG / 'urdf' / 'build_summary.json').read_text())['total_mass_kg']
+    urdf = sum(float(m.get('value')) for m in ET.parse(path).getroot().iter('mass'))
+    assert abs(urdf - total) < 0.002
+
+
 def test_camera_mounted_inside_envelope(robot):
     """D455 at the studied pose: centred, pitched down, top under the 0.75 m stowed height."""
     tf = _zero_pose(robot)
