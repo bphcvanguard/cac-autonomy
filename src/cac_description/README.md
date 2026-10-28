@@ -53,6 +53,45 @@ gz sim -r /workspace/arenas/schematic/arena.sdf
 
 The rover is placed at the layout's start pose in the start zone. Its meshes are copied into the world folder.
 
+## Camera: RealSense D455 on a printed bracket
+
+**Pose.** The camera's centre is at x 0.35, y 0, z 0.68 m (in `base_footprint`), pitched 22.5° down.
+The top of the camera is 0.698 m above the ground, so it is inside the 0.75 m stowed height.
+The pose comes from a study (`cad/camera_mount_study.md`, figures `cad/camera_fig*.png`). It ray-cast the D455's field of view against this rover's real geometry over a sweep of positions and pitches. Results at this pose:
+
+- **Self-occlusion:** none. 0 % of the depth rays hit the rover, even with the rover pitched 5° nose-down.
+- **Blind zone:** the first ground the camera sees is 0.24 m past the front wheels.
+- **Ground coverage:** 99 % of the band 0.6–4 m ahead, ±1 m to the sides.
+- **Craters:** a 40 cm × 6 cm crater is visible from about 2.4 m.
+- **Markers:** every ArUco board (centre 0.35 m) stays in the colour image from 0.5 to 8 m. The margin at 8 m is 11°, or 6° with the rover pitched nose-down. That 8 m marker is what limits the pitch to about 23°.
+
+**Bracket.** `cad/d455_bracket.step` and `.stl` are one PLA part, about 130 cm³, in `base_link` coordinates. Its parametric FreeCAD source is `tools/d455_bracket.py`. It has three parts:
+
+- a **saddle** over the body's front top cross member (30 × 30 mm), clamped by **2 × M5 bolts** that run fore-aft under the member;
+- a **web** up to the camera plate;
+- a **plate** tilted 23°, with a 1/4-20 clearance hole and a head counterbore for the D455's tripod thread, and a back lip so the camera can't turn.
+
+**Printing and fitting:**
+- Print with the saddle's open side down.
+- Use a 1/4-20 screw no longer than plate + 5 mm. The plate is 6 mm thick; check the D455's thread depth.
+
+**URDF.**
+- `camera_mount` (the bracket) and `camera_link` (the D455 body) are fixed to the body.
+- `camera_color_optical_frame` and `camera_depth_optical_frame` are standard optical frames: z forward, x right, y down.
+- For Gazebo there are **two sensors**:
+  - a colour `camera` at 90°, topic `camera/image`;
+  - a `depth_camera` at 87°, 0.52–6 m, topic `camera/depth_image`.
+
+  The combined `rgbd_camera` in gz-sim 8 renders its colour image unlit (black geometry; measured), so it is not used.
+- `cad/camera_sim_rgb.png` is the simulated colour frame from the start zone: sand, column, rocks, a crater and a marker.
+
+**To verify on the real camera:**
+- The D455's size (124 × 26 × 29 mm assumed) and mass (0.39 kg assumed).
+- The optical-frame offsets. On the real robot, use `realsense2_description` for the exact extrinsics; here the optical frames sit at the body centre.
+- Re-run the study once the digging tool is modelled: a bucket in front could block the lower view.
+
+**Later:** a raising and rotating mast is allowed after the start (up to +1.75 m). The bracket's plate and tripod interface can move onto it unchanged.
+
 ## Masses: from the materials, until the rover is weighed
 
 | Material | Parts | Density used (per CAD volume) |

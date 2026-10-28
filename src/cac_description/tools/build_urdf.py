@@ -146,6 +146,80 @@ MATERIAL_DENSITY = {
 }
 
 
+CAMERA = {}     # optional camera + mount from the model file (see camera_links)
+
+
+def camera_links(out_pkg, fmt_):
+    """URDF lines for the camera mount (printed bracket) and the camera with optical frames.
+
+    Model-file keys (camera): mount_stl (bracket in base_link coordinates, mm), mount_material,
+    xyz / rpy of the camera body centre in base_link, size (x depth, y width, z height, m),
+    mass, name, and a Gazebo rgbd sensor block (hfov_deg, width, height, rate, near, far).
+    """
+    c = CAMERA
+    name = c.get('name', 'camera')
+    out = []
+    src = os.path.join(c['_model_dir'], c['mount_stl'])
+    tris = read_stl(src) * MM                             # mm -> m, already in base_link frame
+    write_stl(os.path.join(out_pkg, 'meshes', f'{name}_mount.stl'), tris)
+    vol, com, inr_unit = mass_props(tris)
+    m = vol * MATERIAL_DENSITY[c.get('mount_material', 'pla')]
+    inr = inr_unit * m
+    lo, hi = tris.reshape(-1, 3).min(0), tris.reshape(-1, 3).max(0)
+    out.append(f'  <link name="{name}_mount">')
+    out.append(f'    <inertial><origin xyz="{fmt_(com)}" rpy="0 0 0"/><mass value="{m:.6g}"/>')
+    out.append(f'      <inertia ixx="{inr[0, 0]:.6g}" ixy="{inr[0, 1]:.6g}" '
+               f'ixz="{inr[0, 2]:.6g}" iyy="{inr[1, 1]:.6g}" iyz="{inr[1, 2]:.6g}" '
+               f'izz="{inr[2, 2]:.6g}"/></inertial>')
+    out.append('    <visual><geometry><mesh filename="package://cac_description/meshes/'
+               f'{name}_mount.stl"/></geometry><material name="mat_pla"/></visual>')
+    out.append(f'    <collision><origin xyz="{fmt_((lo + hi) / 2)}" rpy="0 0 0"/>'
+               f'<geometry><box size="{fmt_(hi - lo)}"/></geometry></collision>')
+    out.append('  </link>')
+    out.append(f'  <joint name="{name}_mount_joint" type="fixed"><parent link="base_link"/>'
+               f'<child link="{name}_mount"/><origin xyz="0 0 0" rpy="0 0 0"/></joint>')
+    size = c['size']
+    out.append(f'  <link name="{name}_link">')
+    sx, sy, sz = size
+    cm = c['mass']
+    out.append(f'    <inertial><origin xyz="0 0 0" rpy="0 0 0"/><mass value="{cm:.6g}"/>'
+               f'<inertia ixx="{cm * (sy * sy + sz * sz) / 12:.6g}" ixy="0" ixz="0" '
+               f'iyy="{cm * (sx * sx + sz * sz) / 12:.6g}" iyz="0" '
+               f'izz="{cm * (sx * sx + sy * sy) / 12:.6g}"/></inertial>')
+    box = f'<geometry><box size="{fmt_(size)}"/></geometry>'
+    out.append(f'    <visual>{box}<material name="mat_motor"/></visual>')
+    out.append(f'    <collision>{box}</collision>')
+    out.append('  </link>')
+    out.append(f'  <joint name="{name}_joint" type="fixed"><parent link="{name}_mount"/>'
+               f'<child link="{name}_link"/><origin xyz="{fmt_(c["xyz"])}" '
+               f'rpy="{fmt_(c["rpy"])}"/></joint>')
+    # REP-103 optical frames (z forward, x right, y down); placed at the body centre, see README
+    for opt in ('depth', 'color'):
+        out.append(f'  <link name="{name}_{opt}_optical_frame"/>')
+        out.append(f'  <joint name="{name}_{opt}_optical_joint" type="fixed">'
+                   f'<parent link="{name}_link"/><child link="{name}_{opt}_optical_frame"/>'
+                   f'<origin xyz="0 0 0" rpy="{-math.pi / 2:.6g} 0 {-math.pi / 2:.6g}"/></joint>')
+    g = c.get('gazebo')
+    if g:
+        # Two sensors, not one rgbd_camera: in gz-sim 8 the rgbd_camera's colour image renders
+        # unlit (geometry black, sky grey; measured). D455: colour ~90 deg, depth ~87 deg HFOV.
+        def sensor(sname, stype, topic, frame, hfov, extra=''):
+            return (f'<sensor name="{sname}" type="{stype}"><update_rate>{g["rate"]}</update_rate>'
+                    f'<topic>{topic}</topic><gz_frame_id>{frame}</gz_frame_id>'
+                    f'<camera><horizontal_fov>{math.radians(hfov):.6g}</horizontal_fov>'
+                    f'<image><width>{g["width"]}</width><height>{g["height"]}</height>{extra}'
+                    f'</image><clip><near>{g["near"]}</near><far>{g["far"]}</far></clip>'
+                    '</camera><always_on>1</always_on><visualize>false</visualize></sensor>')
+        out.append(f'  <gazebo reference="{name}_link">'
+                   + sensor(f'{name}_color', 'camera', f'{name}/image',
+                            f'{name}_color_optical_frame', g.get('color_hfov_deg', 90.0))
+                   + sensor(f'{name}_depth', 'depth_camera', f'{name}/depth_image',
+                            f'{name}_depth_optical_frame', g['hfov_deg'],
+                            '<format>R_FLOAT32</format>')
+                   + '</gazebo>')
+    return out
+
+
 def load_model(path):
     """Override pivots (mm) and material densities from a model JSON."""
     m = json.load(open(path))
@@ -159,6 +233,10 @@ def load_model(path):
         if key in m:
             g[var] = np.array(m[key], float) * MM
     MATERIAL_DENSITY.update(m.get('density', {}))
+    CAMERA.clear()
+    CAMERA.update(m.get('camera', {}))
+    if CAMERA:
+        CAMERA['_model_dir'] = os.path.dirname(os.path.abspath(path))
     return m.get('source')
 
 
@@ -523,6 +601,9 @@ def main():
                           ('rear', f'{s}_bogie')):
             joint(f'{s}_{p}_wheel_joint', 'continuous', parent, f'{s}_{p}_wheel', '0 1 0',
                   '<limit effort="20" velocity="20"/><dynamics damping="0.05"/>')
+    if CAMERA:
+        for ln in camera_links(a.out_pkg, fmt):
+            w(ln)
     w('</robot>')
     os.makedirs(os.path.join(a.out_pkg, 'urdf'), exist_ok=True)
     with open(os.path.join(a.out_pkg, 'urdf', 'rover.urdf'), 'w') as f:

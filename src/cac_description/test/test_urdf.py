@@ -115,7 +115,8 @@ def test_sim_variant_only_locks_the_differential():
 def test_sim_variant_wheel_friction():
     """Wheel friction tags, if any, cover every wheel (none = isotropic, the sand decides)."""
     sim = ET.parse(SIM).getroot()
-    g = {e.get('reference'): e for e in sim.findall('gazebo')}
+    g = {e.get('reference'): e for e in sim.findall('gazebo')
+         if e.get('reference', '').endswith('_wheel')}
     wheels = [ln.get('name') for ln in sim.findall('link') if ln.get('name').endswith('_wheel')]
     assert not g or sorted(g) == sorted(wheels)
 
@@ -211,3 +212,21 @@ def test_readme_states_build_summary_mass():
     import json
     total = json.loads((PKG / 'urdf' / 'build_summary.json').read_text())['total_mass_kg']
     assert f'{total:.1f} kg' in (PKG / 'README.md').read_text()
+
+
+def test_camera_mounted_inside_envelope(robot):
+    """D455 at the studied pose: centred, pitched down, top under the 0.75 m stowed height."""
+    tf = _zero_pose(robot)
+    cam = tf['camera_link']
+    assert abs(cam[1, 3]) < 1e-6
+    fwd = cam[:3, 0]                                   # camera x axis in base_footprint
+    pitch = math.degrees(math.asin(-fwd[2]))
+    assert 15.0 < pitch < 30.0
+    size = [float(v) for v in robot.find("link[@name='camera_link']/visual/geometry/box")
+            .get('size').split()]
+    corners = np.array([[sx * size[0], sy * size[1], sz * size[2]]
+                        for sx in (-.5, .5) for sy in (-.5, .5) for sz in (-.5, .5)])
+    top = (corners @ cam[:3, :3].T + cam[:3, 3])[:, 2].max()
+    assert top < 0.75
+    types = {s.get('type') for s in robot.iter('sensor')}
+    assert {'camera', 'depth_camera'} <= types
